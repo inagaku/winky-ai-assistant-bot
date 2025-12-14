@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: telegram-bot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram-bot-app
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      QUEUE_TYPE: ${QUEUE_TYPE:-redis}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    command: python telegram_bot.py
+
+  queue-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram-bot-consumer
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      QUEUE_TYPE: ${QUEUE_TYPE:-redis}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    command: python queue_consumer.py
+
+volumes:
+  redis_data:
+
+networks:
+  default:
+    name: telegram-bot-network
+
