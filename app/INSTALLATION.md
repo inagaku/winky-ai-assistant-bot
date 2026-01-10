@@ -45,7 +45,7 @@ You now have a **complete, production-ready Telegram AI Assistant Bot** with all
 ## 📁 Project Structure
 
 ```
-naga-ai-assistant-bot-2/
+winky-ai-assistant-bot-2/
 ├── Core Application Files
 │   ├── telegram_bot.py          (Main bot application)
 │   ├── models.py                (Data models)
@@ -75,7 +75,7 @@ naga-ai-assistant-bot-2/
 
 ### 1. Setup (2 minutes)
 ```bash
-cd /Users/nagaku/Projects/n8n/naga-ai-assistant-bot-2
+cd /Users/nagaku/Projects/n8n/winky-ai-assistant-bot-2
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -110,7 +110,7 @@ Done! Your bot is now running. Send it a message on Telegram!
 - **[QUICKSTART.md](QUICKSTART.md)** - Get running in 5 minutes
 
 ### For Setup & Usage
-- **[README.md](README.md)** - Full documentation with all features
+- **[README.md](../readme.md)** - Full documentation with all features
 
 ### For Development
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development setup and extending

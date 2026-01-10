@@ -14,7 +14,7 @@ This guide covers development setup, testing, and extending the Telegram AI Assi
 
 1. **Clone the repository:**
 ```bash
-cd /Users/nagaku/Projects/n8n/naga-ai-assistant-bot-2
+cd /Users/nagaku/Projects/n8n/winky-ai-assistant-bot-2
 ```
 
 2. **Create and activate virtual environment:**
@@ -83,7 +83,7 @@ sudo service rabbitmq-server start
 ## Project Structure
 
 ```
-naga-ai-assistant-bot-2/
+winky-ai-assistant-bot-2/
 ├── models.py                 # Data models
 ├── audio_processor.py        # Audio to text conversion
 ├── action_matcher.py         # Action matching & parameter extraction
@@ -144,10 +144,12 @@ pytest --cov=. --cov-report=html
 ### Example Test Cases
 
 Create `test_models.py`:
+
 ```python
 import pytest
-from models import Action, ActionType
+from app.models import Action, ActionType
 from datetime import datetime
+
 
 def test_action_model_creation():
     action = Action(
@@ -416,7 +418,7 @@ async def health_check():
 
 ```bash
 # Ensure you're in the project directory
-cd /Users/nagaku/Projects/n8n/naga-ai-assistant-bot-2
+cd /Users/nagaku/Projects/n8n/winky-ai-assistant-bot-2
 
 # Verify Python path
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"

@@ -120,7 +120,7 @@ A sophisticated Telegram bot that accepts text and audio inputs, converts audio 
 
 1. **Clone or navigate to the project directory:**
 ```bash
-cd /Users/nagaku/Projects/n8n/naga-ai-assistant-bot-2
+cd /Users/nagaku/Projects/n8n/winky-ai-assistant-bot-2
 ```
 
 2. **Create a virtual environment:**

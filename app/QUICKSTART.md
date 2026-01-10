@@ -15,7 +15,7 @@ Get the Telegram AI Assistant Bot up and running in 5 minutes.
 
 ```bash
 # Navigate to project directory
-cd /Users/nagaku/Projects/n8n/naga-ai-assistant-bot-2
+cd /Users/nagaku/Projects/n8n/winky-ai-assistant-bot-2
 
 # Create virtual environment
 python3 -m venv venv
@@ -186,7 +186,7 @@ curl https://api.openai.com/v1/models \
 ## Next Steps
 
 1. **Customize Actions**: See [DEVELOPMENT.md](DEVELOPMENT.md) for adding new actions
-2. **Deploy**: See deployment section in [README.md](README.md)
+2. **Deploy**: See deployment section in [README.md](../readme.md)
 3. **Integrate**: Connect to your upstream service via queue
 4. **Monitor**: Set up logging and monitoring
 
@@ -268,7 +268,7 @@ If you encounter issues:
 2. Verify environment variables: `cat .env`
 3. Test Redis: `redis-cli ping`
 4. Test OpenAI: Call the API directly
-5. Review [README.md](README.md) or [DEVELOPMENT.md](DEVELOPMENT.md)
+5. Review [README.md](../readme.md) or [DEVELOPMENT.md](DEVELOPMENT.md)
 
 ## What's Next?
 

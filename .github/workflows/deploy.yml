@@ -1,0 +1,260 @@
+name: Deploy to ECS Fargate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: winky-ai-assistant
+  ECS_SERVICE: winky-ai-assistant-telegram-bot-service
+  ECS_CLUSTER: winky-ai-assistant-cluster
+  TERRAFORM_VERSION: 1.6.6
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            -f app/Dockerfile \
+            app/
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Push image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Output image URI
+        id: image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: build-and-push
+
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        working-directory: terraform/envs/prod
+        run: |
+          terraform init \
+            -backend=false \
+            -upgrade
+
+      - name: Terraform Validate
+        working-directory: terraform/envs/prod
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_image_tag: ${{ github.sha }}
+        run: |
+          terraform plan \
+            -var-file=terraform.tfvars \
+            -var="image_tag=${{ github.sha }}" \
+            -out=tfplan
+
+      - name: Comment PR with Plan
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes('Terraform Plan')
+            );
+            const output = `#### Terraform Plan 📋\n\`\`\`\n${ process.env.PLAN }\n\`\`\``;
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: output
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output
+              });
+            }
+
+  deploy:
+    name: Deploy to ECS Fargate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build-and-push
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform/envs/prod
+        run: |
+          terraform init \
+            -upgrade
+
+      - name: Terraform Apply
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_image_tag: ${{ github.sha }}
+        run: |
+          terraform apply \
+            -var-file=terraform.tfvars \
+            -var="image_tag=${{ github.sha }}" \
+            -auto-approve \
+            -input=false
+
+      - name: Wait for ECS deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Get deployment info
+        id: deployment-info
+        run: |
+          SERVICE_ARN=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'services[0].serviceArn' \
+            --output text)
+          
+          TASK_COUNT=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'services[0].runningCount' \
+            --output text)
+          
+          echo "service_arn=$SERVICE_ARN" >> $GITHUB_OUTPUT
+          echo "task_count=$TASK_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Create deployment summary
+        run: |
+          echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ needs.build-and-push.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster**: ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service**: ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Running Tasks**: ${{ steps.deployment-info.outputs.task_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    if: failure() && github.ref == 'refs/heads/main'
+    needs: [build-and-push, deploy]
+
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create rollback issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Deployment Failed - Manual Rollback Required',
+              body: `## Deployment Failure Alert\n\n**Commit**: ${context.payload.after}\n**Branch**: main\n\n### Action Required\nPlease review the failed deployment and consider reverting the commit:\n\n\`\`\`bash\ngit revert ${context.payload.after}\n\`\`\`\n\nThe pipeline will automatically re-run and redeploy the previous version.`,
+              labels: ['deployment-failure', 'urgent']
+            });
+

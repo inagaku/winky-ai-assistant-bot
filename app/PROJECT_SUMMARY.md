@@ -181,7 +181,7 @@ This is a complete, production-ready Telegram AI Assistant Bot that:
 
 ```bash
 # Clone and setup
-cd /Users/nagaku/Projects/n8n/naga-ai-assistant-bot-2
+cd /Users/nagaku/Projects/n8n/winky-ai-assistant-bot-2
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt

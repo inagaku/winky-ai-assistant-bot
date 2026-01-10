@@ -1,0 +1,54 @@
+# Production environment configuration
+# This file should be in: terraform/envs/prod/terraform.tfvars
+
+aws_region = "us-east-1"
+environment = "prod"
+project_name = "winky-ai-assistant"
+app_name = "telegram-bot"
+
+# Required: Set these values based on your AWS setup
+# vpc_id = "vpc-xxxxxxxx"
+# private_subnets = ["subnet-xxxxxxxx", "subnet-yyyyyyyy"]
+# alb_subnets = ["subnet-zzzzzzzz", "subnet-wwwwwwww"] # Public subnets
+
+# Container configuration
+container_port = 8000
+container_cpu = 512
+container_memory = 1024
+
+# ECS Service configuration
+desired_count = 2
+deployment_minimum_healthy_percent = 50
+deployment_maximum_percent = 200
+health_check_grace_period = 60
+
+# Logging
+log_retention_days = 7
+
+# ECR
+ecr_repository_name = "winky-ai-assistant"
+
+# Image tag will be provided by CI/CD pipeline
+# image_tag = "abc123def456..." # This is provided by GitHub Actions
+
+# ALB
+enable_alb = true
+
+# Auto-scaling
+enable_autoscaling = false
+autoscaling_min_capacity = 2
+autoscaling_max_capacity = 4
+autoscaling_target_cpu = 70
+
+# Environment variables for the container
+environment_variables = {
+  PYTHONUNBUFFERED = "1"
+  ENV = "prod"
+}
+
+# Secrets from AWS Secrets Manager (optional)
+# secrets = {
+#   TELEGRAM_TOKEN = "arn:aws:secretsmanager:us-east-1:123456789012:secret:telegram-token-xxxxx"
+#   OPENAI_API_KEY = "arn:aws:secretsmanager:us-east-1:123456789012:secret:openai-key-xxxxx"
+# }
+

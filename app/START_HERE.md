@@ -26,7 +26,7 @@ docker-compose up -d
 
 ## 📚 I Want to Understand Everything
 
-→ **Read [README.md](README.md)**
+→ **Read [README.md](../readme.md)**
 
 Complete documentation covering:
 - Features and architecture
@@ -82,10 +82,10 @@ Complete project index with:
 → [QUICKSTART.md](QUICKSTART.md)
 
 ### "What does it do?"
-→ [README.md](README.md) - Features section
+→ [README.md](../readme.md) - Features section
 
 ### "How does it work?"
-→ [README.md](README.md) - Architecture section
+→ [README.md](../readme.md) - Architecture section
 
 ### "How do I add a new action?"
 → [DEVELOPMENT.md](DEVELOPMENT.md)
@@ -97,7 +97,7 @@ Complete project index with:
 → [INDEX.md](INDEX.md)
 
 ### "What if something goes wrong?"
-→ [README.md](README.md) - Troubleshooting section
+→ [README.md](../readme.md) - Troubleshooting section
 
 ---
 
@@ -215,7 +215,7 @@ mypy *.py
 3. Done!
 
 ### Path 2: Understand It All 🤓
-1. [README.md](README.md) - Overview
+1. [README.md](../readme.md) - Overview
 2. [DEVELOPMENT.md](DEVELOPMENT.md) - How it works
 3. Read the code
 4. Extend with your features
@@ -223,7 +223,7 @@ mypy *.py
 ### Path 3: Production Ready 🏢
 1. [QUICKSTART.md](QUICKSTART.md)
 2. [EXAMPLES.md](EXAMPLES.md) - Deployment
-3. [README.md](README.md) - Security
+3. [README.md](../readme.md) - Security
 4. Deploy and monitor
 
 ### Path 4: Browse & Learn 📚
@@ -249,11 +249,11 @@ mypy *.py
 | Question | Answer |
 |----------|--------|
 | How to set up? | [QUICKSTART.md](QUICKSTART.md) |
-| How does it work? | [README.md](README.md) |
+| How does it work? | [README.md](../readme.md) |
 | How to develop? | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | How to deploy? | [EXAMPLES.md](EXAMPLES.md) |
 | What's in it? | [INDEX.md](INDEX.md) |
-| Something wrong? | [README.md](README.md) Troubleshooting |
+| Something wrong? | [README.md](../readme.md) Troubleshooting |
 
 ---
 
@@ -275,7 +275,7 @@ mypy *.py
 **Choose your next step:**
 
 - 🏃 **[QUICKSTART.md](QUICKSTART.md)** - Get running NOW (5 min)
-- 📖 **[README.md](README.md)** - Learn everything
+- 📖 **[README.md](../readme.md)** - Learn everything
 - 👨‍💻 **[DEVELOPMENT.md](DEVELOPMENT.md)** - Start coding
 - 📚 **[INDEX.md](INDEX.md)** - Browse all docs
 

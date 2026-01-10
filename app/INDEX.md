@@ -11,7 +11,7 @@ Start here if you're new to this project:
 
 ### For Implementation & Deployment
 Comprehensive guides for running and deploying:
-1. **[README.md](README.md)** - Full documentation with features, setup, and troubleshooting
+1. **[README.md](../readme.md)** - Full documentation with features, setup, and troubleshooting
 2. **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development setup, testing, and extending features
 3. **[EXAMPLES.md](EXAMPLES.md)** - Real-world configuration examples and deployment scenarios
 
@@ -182,7 +182,7 @@ Comprehensive guides for running and deploying:
 
 ```bash
 # 1. Clone and navigate
-cd /Users/nagaku/Projects/n8n/naga-ai-assistant-bot-2
+cd /Users/nagaku/Projects/n8n/winky-ai-assistant-bot-2
 
 # 2. Setup environment
 python3 -m venv venv
