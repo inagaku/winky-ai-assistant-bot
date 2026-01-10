@@ -1,3 +1,5 @@
 .env
 .venv
 tmp/*
+.idea/
+.DS_Store
