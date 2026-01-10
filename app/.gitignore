@@ -84,7 +84,10 @@ audio_temp.*
 .docker/
 
 # Project specific
-config/
 data/
 models/
+
+# Config - allow actions.yaml but ignore sensitive configs
+config/*.local.yaml
+config/*.secret.yaml
 

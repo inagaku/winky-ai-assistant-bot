@@ -44,14 +44,12 @@ Telegram Users (Text/Audio)
 
 ## Predefined Actions
 
+Actions are configured in `app/config/actions.yaml` for easy customization.
+
 | Action | Description | Example |
 |--------|-------------|---------|
-| `send_message` | Send message to recipient | "Send a message to John" |
 | `schedule_meeting` | Schedule meeting | "Schedule meeting tomorrow at 2 PM" |
 | `create_reminder` | Create reminder | "Remind me to call dentist" |
-| `get_weather` | Get weather info | "What's the weather in NYC?" |
-| `search_information` | Search for info | "Search for Python docs" |
-| `send_email` | Send email | "Email team about project" |
 | `create_task` | Create task | "Create task to fix bug" |
 | `update_calendar` | Update calendar | "Block 2 hours for presentation" |
 
@@ -129,6 +127,8 @@ LOG_LEVEL=INFO
 ```
 winky-ai-assistant-bot/
 ├── app/
+│   ├── config/
+│   │   └── actions.yaml     # Action definitions (configurable)
 │   ├── telegram_bot.py      # Main bot application
 │   ├── models.py            # Pydantic data models
 │   ├── audio_processor.py   # Whisper transcription
@@ -164,9 +164,8 @@ winky-ai-assistant-bot/
 
 ### Adding a New Action Type
 
-1. Add to `ActionType` enum in `app/models.py`
-2. Add predefined action in `app/action_matcher.py`
-3. Add handler in `app/queue_consumer.py`
+1. Add action definition in `app/config/actions.yaml`
+2. Add handler method in `app/queue_consumer.py`
 
 ### Code Style
 

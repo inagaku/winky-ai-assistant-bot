@@ -1,21 +1,37 @@
 """
 Data models for the Telegram AI Assistant Bot.
 """
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+import os
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
+from pydantic import BaseModel, Field
 
 
-class ActionType(str, Enum):
-    """Predefined list of possible actions."""
-    SEND_MESSAGE = "send_message"
-    SCHEDULE_MEETING = "schedule_meeting"
-    CREATE_REMINDER = "create_reminder"
-    GET_WEATHER = "get_weather"
-    SEARCH_INFORMATION = "search_information"
-    SEND_EMAIL = "send_email"
-    CREATE_TASK = "create_task"
-    UPDATE_CALENDAR = "update_calendar"
+def _load_actions_config() -> Dict:
+    """Load actions configuration from YAML file."""
+    config_path = Path(__file__).parent / "config" / "actions.yaml"
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"Actions config not found: {config_path}")
+
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    return config.get("actions", {})
+
+
+def _create_action_type_enum() -> type:
+    """Dynamically create ActionType enum from config."""
+    actions_config = _load_actions_config()
+    enum_values = {name.upper(): name for name in actions_config.keys()}
+    return Enum("ActionType", enum_values, type=str)
+
+
+# Create ActionType enum dynamically from config
+ActionType = _create_action_type_enum()
 
 
 class Parameter(BaseModel):
@@ -31,7 +47,7 @@ class Action(BaseModel):
     Represents an action to be performed by the upstream service.
     This object is sent via queue to be processed.
     """
-    action_type: ActionType
+    action_type: str  # Using str instead of ActionType for flexibility
     user_id: int
     chat_id: int
     original_input: str
@@ -40,6 +56,11 @@ class Action(BaseModel):
     embedding: Optional[List[float]] = None
     timestamp: str
     message_id: Optional[int] = None
+
+    def validate_action_type(self) -> bool:
+        """Validate that action_type is a valid configured action."""
+        valid_types = {e.value for e in ActionType}
+        return self.action_type in valid_types
 
     class Config:
         json_schema_extra = {
@@ -62,7 +83,7 @@ class Action(BaseModel):
 
 class PredefinedAction(BaseModel):
     """Schema for predefined actions that inputs are matched against."""
-    action_type: ActionType
+    action_type: str
     keywords: List[str]
     description: str
     required_parameters: List[str]
@@ -78,3 +99,31 @@ class Message(BaseModel):
     audio_file_id: Optional[str] = None
     timestamp: str
 
+
+def get_available_actions() -> List[str]:
+    """Get list of available action types from config."""
+    return [e.value for e in ActionType]
+
+
+def load_predefined_actions() -> List[PredefinedAction]:
+    """
+    Load predefined actions from config file.
+
+    Returns:
+        List of PredefinedAction objects.
+    """
+    actions_config = _load_actions_config()
+    predefined_actions = []
+
+    for action_name, action_data in actions_config.items():
+        predefined_actions.append(
+            PredefinedAction(
+                action_type=action_name,
+                keywords=action_data.get("keywords", []),
+                description=action_data.get("description", ""),
+                required_parameters=action_data.get("required_parameters", []),
+                example_inputs=action_data.get("example_inputs", [])
+            )
+        )
+
+    return predefined_actions

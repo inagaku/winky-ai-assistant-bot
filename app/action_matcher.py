@@ -2,13 +2,15 @@
 Embedding and action matching module.
 Uses OpenAI embeddings to match user input to predefined actions.
 """
+import json
 import logging
 import os
 from typing import List, Optional, Tuple
+
 import numpy as np
 from openai import OpenAI
 
-from models import ActionType, Action, PredefinedAction, Parameter
+from models import PredefinedAction, load_predefined_actions
 
 logger = logging.getLogger(__name__)
 
@@ -24,99 +26,12 @@ class ActionMatcher:
             api_key: OpenAI API key. If not provided, will use OPENAI_API_KEY env var.
         """
         self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
-        self.predefined_actions = self._load_predefined_actions()
+        self.predefined_actions = load_predefined_actions()
         self.action_embeddings = {}
         self._compute_action_embeddings()
 
-    def _load_predefined_actions(self) -> List[PredefinedAction]:
-        """
-        Load predefined actions that inputs will be matched against.
-
-        Returns:
-            List of predefined actions.
-        """
-        return [
-            PredefinedAction(
-                action_type=ActionType.SEND_MESSAGE,
-                keywords=["send", "message", "tell", "message to"],
-                description="Send a message to a recipient",
-                required_parameters=["recipient", "message"],
-                example_inputs=[
-                    "Send a message to John saying hello",
-                    "Tell Sarah that I'll be late"
-                ]
-            ),
-            PredefinedAction(
-                action_type=ActionType.SCHEDULE_MEETING,
-                keywords=["schedule", "meeting", "appointment", "calendar", "book"],
-                description="Schedule a meeting with participants",
-                required_parameters=["attendee", "date", "time"],
-                example_inputs=[
-                    "Schedule a meeting with John tomorrow at 2 PM",
-                    "Book an appointment with the team next Monday at 10 AM"
-                ]
-            ),
-            PredefinedAction(
-                action_type=ActionType.CREATE_REMINDER,
-                keywords=["remind", "reminder", "remember", "set alarm"],
-                description="Create a reminder for a task",
-                required_parameters=["task", "time"],
-                example_inputs=[
-                    "Remind me to call the dentist tomorrow",
-                    "Set a reminder for the meeting in 30 minutes"
-                ]
-            ),
-            PredefinedAction(
-                action_type=ActionType.GET_WEATHER,
-                keywords=["weather", "temperature", "rain", "forecast", "sunny"],
-                description="Get weather information",
-                required_parameters=["location"],
-                example_inputs=[
-                    "What's the weather in New York?",
-                    "Tell me the forecast for tomorrow in London"
-                ]
-            ),
-            PredefinedAction(
-                action_type=ActionType.SEARCH_INFORMATION,
-                keywords=["search", "find", "look up", "google", "information"],
-                description="Search for information",
-                required_parameters=["query"],
-                example_inputs=[
-                    "Search for Python documentation",
-                    "Find information about artificial intelligence"
-                ]
-            ),
-            PredefinedAction(
-                action_type=ActionType.SEND_EMAIL,
-                keywords=["email", "mail", "send email", "compose email"],
-                description="Send an email",
-                required_parameters=["recipient", "subject", "body"],
-                example_inputs=[
-                    "Send an email to john@example.com about the project",
-                    "Email the team with the meeting notes"
-                ]
-            ),
-            PredefinedAction(
-                action_type=ActionType.CREATE_TASK,
-                keywords=["task", "todo", "create task", "add task"],
-                description="Create a new task",
-                required_parameters=["task_name"],
-                example_inputs=[
-                    "Create a task to fix the bug",
-                    "Add a task for code review"
-                ]
-            ),
-            PredefinedAction(
-                action_type=ActionType.UPDATE_CALENDAR,
-                keywords=["calendar", "schedule", "block time", "update calendar"],
-                description="Update calendar with event",
-                required_parameters=["event_name", "date", "time"],
-                example_inputs=[
-                    "Block 2 hours on my calendar for the presentation",
-                    "Update calendar with lunch plans on Friday"
-                ]
-            ),
-        ]
+        logger.info(f"Loaded {len(self.predefined_actions)} actions from config: "
+                    f"{[a.action_type for a in self.predefined_actions]}")
 
     def _compute_action_embeddings(self):
         """Compute embeddings for predefined action descriptions."""
@@ -176,7 +91,7 @@ class ActionMatcher:
 
         return float(dot_product / (norm1 * norm2))
 
-    async def match_action(self, user_input: str) -> Tuple[ActionType, float, List[float]]:
+    async def match_action(self, user_input: str) -> Tuple[str, float, List[float]]:
         """
         Match user input to a predefined action using embeddings.
 
@@ -213,7 +128,7 @@ class ActionMatcher:
             logger.error(f"Error matching action: {e}")
             raise
 
-    def get_predefined_action(self, action_type: ActionType) -> Optional[PredefinedAction]:
+    def get_predefined_action(self, action_type: str) -> Optional[PredefinedAction]:
         """
         Get predefined action schema by type.
 
@@ -228,10 +143,9 @@ class ActionMatcher:
                 return action
         return None
 
-    def extract_parameters(self, user_input: str, action_type: ActionType) -> dict:
+    def extract_parameters(self, user_input: str, action_type: str) -> dict:
         """
-        Extract parameters from user input for a specific action.
-        This is a simple implementation - can be enhanced with LLM.
+        Extract parameters from user input for a specific action using LLM.
 
         Args:
             user_input: User's input text.
@@ -245,22 +159,21 @@ class ActionMatcher:
         # Get the predefined action schema
         action_schema = self.get_predefined_action(action_type)
         if not action_schema:
+            logger.warning(f"No schema found for action type: {action_type}")
             return {}
 
-        # Simple parameter extraction - can be enhanced with LLM
         parameters = {}
 
-        # This is a basic implementation. For production, use an LLM like GPT to extract parameters
-        # Here's an example of how you might use LLM for parameter extraction:
         try:
             extraction_prompt = f"""
-            Extract parameters from the user input for a {action_type} action.
-            Required parameters: {', '.join(action_schema.required_parameters)}
-            User input: "{user_input}"
-            
-            Return a JSON object with the extracted parameters.
-            If a parameter is not found, use null or reasonable defaults.
-            """
+Extract parameters from the user input for a {action_type} action.
+Required parameters: {', '.join(action_schema.required_parameters)}
+User input: "{user_input}"
+
+Return a JSON object with the extracted parameters.
+If a parameter is not found, use null or reasonable defaults.
+Only return valid JSON, no explanation.
+"""
 
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -272,14 +185,19 @@ class ActionMatcher:
                 max_tokens=200
             )
 
-            import json
             response_text = response.choices[0].message.content.strip()
 
             # Try to parse JSON from response
             try:
+                # Handle potential markdown code blocks
+                if response_text.startswith("```"):
+                    response_text = response_text.split("```")[1]
+                    if response_text.startswith("json"):
+                        response_text = response_text[4:]
+                    response_text = response_text.strip()
+
                 parameters = json.loads(response_text)
             except json.JSONDecodeError:
-                # If JSON parsing fails, try to extract from text
                 logger.warning(f"Could not parse JSON response: {response_text}")
                 parameters = {}
 
@@ -290,3 +208,10 @@ class ActionMatcher:
         logger.info(f"Extracted parameters: {parameters}")
         return parameters
 
+    def reload_actions(self):
+        """Reload actions from config file (useful for hot-reloading)."""
+        logger.info("Reloading actions from config...")
+        self.predefined_actions = load_predefined_actions()
+        self.action_embeddings = {}
+        self._compute_action_embeddings()
+        logger.info(f"Reloaded {len(self.predefined_actions)} actions")
