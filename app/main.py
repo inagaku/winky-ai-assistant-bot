@@ -52,8 +52,7 @@ class Application:
             password=self.settings.database_password,
         )
         await self.database.connect()
-        await self.database.initialize_schema()
-        logger.info("Database connected and schema initialized")
+        logger.info("Database connected")
 
         # Initialize bot
         self.bot = TelegramBot(

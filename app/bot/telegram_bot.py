@@ -138,10 +138,6 @@ class TelegramBot:
         """Initialize the bot and all components."""
         logger.info("Initializing Telegram bot...")
 
-        # Connect to database
-        await self.database.connect()
-        await self.database.initialize_schema()
-
         # Initialize intent resolver (pre-compute embeddings)
         await self.intent_resolver.initialize()
 
