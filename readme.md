@@ -1,70 +1,90 @@
 # Telegram AI Assistant Bot
 
-A Telegram bot that accepts text and audio inputs, converts audio to text using OpenAI Whisper, matches input to predefined actions using AI embeddings, and publishes structured action objects to a message queue.
+A Telegram bot that helps you manage reminders, tasks, and meetings using natural language. Simply tell the bot what you need, and it will understand and act on your requests.
 
 ## Features
 
-- **Text & Audio Input**: Accept text messages and voice/audio files from Telegram
-- **Audio Transcription**: Convert audio to text using OpenAI Whisper API
-- **AI Action Matching**: Match user input to predefined actions using OpenAI embeddings with confidence scoring
-- **Parameter Extraction**: Automatically extract required parameters using LLM
-- **Queue Integration**: Publish actions to Redis or RabbitMQ
-- **Consumer Service**: Process actions from queue with extensible handlers
+- **Natural Language Understanding**: Just type what you need in plain language
+  - "Remind me to call mom tomorrow at 3pm"
+  - "Create a task to review the report"
+  - "Schedule a meeting with John for Friday afternoon"
+- **Text & Audio Input**: Send text messages or voice notes
+- **Smart Clarification**: When unsure, the bot asks for clarification instead of guessing
+- **Persistent Storage**: All your data is stored securely in PostgreSQL
+- **Scheduled Notifications**: Get reminded at the right time
 
 ## Architecture
 
 ```
-Telegram Users (Text/Audio)
-        |
-        v
-+------------------+
-|  Telegram Bot    |  <- Receives messages, downloads audio
-+------------------+
-        |
-        v
-+------------------+
-| Audio Processor  |  <- Whisper API transcription
-+------------------+
-        |
-        v
-+------------------+
-| Action Matcher   |  <- Embeddings + parameter extraction
-+------------------+
-        |
-        v
-+------------------+
-|  Queue Manager   |  <- Redis or RabbitMQ
-+------------------+
-        |
-        v
-+------------------+
-| Queue Consumer   |  <- Process actions
-+------------------+
+┌─────────────────────────────────────────────────────────────────────┐
+│                        TELEGRAM USERS                                │
+│              (Send text/audio messages)                             │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    CONVERSATION LAYER (Bot)                          │
+│  ┌─────────────┐  ┌─────────────────┐  ┌──────────────────────┐    │
+│  │ Message     │  │ Audio           │  │ Command              │    │
+│  │ Handler     │──│ Processor       │──│ Handler              │    │
+│  └─────────────┘  └─────────────────┘  └──────────────────────┘    │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    INTELLIGENCE LAYER                                │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌───────────────────┐   │
+│  │ Semantic        │  │ Parameter       │  │ Clarification     │   │
+│  │ Matcher         │──│ Extractor       │──│ Manager           │   │
+│  │ (Embeddings)    │  │ (LLM)           │  │ (Low confidence)  │   │
+│  └─────────────────┘  └─────────────────┘  └───────────────────┘   │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    SERVICE LAYER (Business Logic)                    │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐        │
+│  │ Reminder  │  │ Task      │  │ Meeting   │  │ User      │        │
+│  │ Service   │  │ Service   │  │ Service   │  │ Service   │        │
+│  └───────────┘  └───────────┘  └───────────┘  └───────────┘        │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    REPOSITORY LAYER (Data Access)                    │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │ Reminder     │  │ Task         │  │ Meeting      │              │
+│  │ Repository   │  │ Repository   │  │ Repository   │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      PostgreSQL Database                             │
+└─────────────────────────────────────────────────────────────────────┘
+
+                    ┌──────────────────────────────┐
+                    │      SCHEDULER SERVICE       │
+                    │  (Notification delivery)     │
+                    └──────────────────────────────┘
 ```
-
-## Predefined Actions
-
-Actions are configured in `app/config/actions.yaml` for easy customization.
-
-| Action | Description | Example |
-|--------|-------------|---------|
-| `schedule_meeting` | Schedule meeting | "Schedule meeting tomorrow at 2 PM" |
-| `create_reminder` | Create reminder | "Remind me to call dentist" |
-| `create_task` | Create task | "Create task to fix bug" |
-| `update_calendar` | Update calendar | "Block 2 hours for presentation" |
 
 ## Quick Start (Local Development)
 
 ### Prerequisites
 
 - Python 3.9+
-- Redis (or RabbitMQ)
+- PostgreSQL 15+
 - Telegram Bot Token (from @BotFather)
 - OpenAI API Key
 
 ### Setup
 
 ```bash
+# Clone the repository
+git clone https://github.com/yourusername/winky-ai-assistant-bot.git
+cd winky-ai-assistant-bot
+
 # Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
@@ -84,19 +104,20 @@ cd app
 docker-compose up -d
 ```
 
-This starts Redis, the Telegram bot, and the queue consumer.
+This starts PostgreSQL and the Telegram bot.
 
 ### Run Manually
 
 ```bash
-# Terminal 1: Start Redis
-docker run -d -p 6379:6379 redis:7-alpine
+# Terminal 1: Start PostgreSQL
+docker run -d -p 5432:5432 \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=winky_bot \
+  postgres:15-alpine
 
-# Terminal 2: Start bot
-cd app && python telegram_bot.py
-
-# Terminal 3: Start consumer
-cd app && python queue_consumer.py
+# Terminal 2: Run the bot
+cd app && python -m app.main
 ```
 
 ## Configuration
@@ -108,18 +129,17 @@ cd app && python queue_consumer.py
 TELEGRAM_BOT_TOKEN=your_bot_token
 OPENAI_API_KEY=your_api_key
 
-# Queue (default: redis)
-QUEUE_TYPE=redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
+# Database
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=winky_bot
+DATABASE_USER=postgres
+DATABASE_PASSWORD=your_password
 
-# Or use RabbitMQ
-# QUEUE_TYPE=rabbitmq
-# RABBITMQ_HOST=localhost
-# RABBITMQ_PORT=5672
-
-# Logging
+# Optional
 LOG_LEVEL=INFO
+SCHEDULER_CHECK_INTERVAL=60
+CONFIDENCE_THRESHOLD=0.75
 ```
 
 ## Project Structure
@@ -127,53 +147,105 @@ LOG_LEVEL=INFO
 ```
 winky-ai-assistant-bot/
 ├── app/
-│   ├── config/
-│   │   └── actions.yaml     # Action definitions (configurable)
-│   ├── telegram_bot.py      # Main bot application
-│   ├── models.py            # Pydantic data models
-│   ├── audio_processor.py   # Whisper transcription
-│   ├── action_matcher.py    # AI matching & extraction
-│   ├── queue_manager.py     # Redis/RabbitMQ abstraction
-│   ├── queue_consumer.py    # Action consumer service
-│   ├── requirements.txt     # Python dependencies
-│   ├── Dockerfile           # Container image
-│   └── docker-compose.yml   # Local development
-├── terraform/               # AWS ECS Fargate infrastructure
-└── .github/workflows/       # CI/CD pipeline
+│   ├── bot/                    # Telegram bot layer
+│   │   ├── handlers/           # Message, command, callback handlers
+│   │   ├── keyboards/          # Inline keyboard builders
+│   │   └── telegram_bot.py     # Main bot application
+│   ├── intelligence/           # NLP layer
+│   │   ├── semantic_matcher.py # Embedding-based action matching
+│   │   ├── parameter_extractor.py # LLM parameter extraction
+│   │   ├── clarification_manager.py # Handle ambiguous inputs
+│   │   └── intent_resolver.py  # Main NLP orchestrator
+│   ├── services/               # Business logic
+│   │   ├── reminder_service.py
+│   │   ├── task_service.py
+│   │   ├── meeting_service.py
+│   │   └── assistant_service.py # Main action executor
+│   ├── repositories/           # Data access layer
+│   │   ├── reminder_repository.py
+│   │   ├── task_repository.py
+│   │   └── meeting_repository.py
+│   ├── models/                 # Domain entities
+│   │   ├── reminder.py
+│   │   ├── task.py
+│   │   ├── meeting.py
+│   │   └── action.py
+│   ├── database/               # Database connection & migrations
+│   ├── scheduler/              # Background notification scheduler
+│   ├── config/                 # Settings & configuration
+│   ├── main.py                 # Application entry point
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── docker-compose.yml
+├── terraform/                  # AWS ECS Fargate infrastructure
+└── .github/workflows/          # CI/CD pipeline
 ```
 
-## Action Object Structure
+## Supported Actions
 
-```json
-{
-  "action_type": "schedule_meeting",
-  "user_id": 123456,
-  "chat_id": 123456,
-  "original_input": "Schedule a meeting with John tomorrow at 2 PM",
-  "parameters": {
-    "attendee": "John",
-    "date": "2025-12-09",
-    "time": "14:00"
-  },
-  "confidence": 0.95,
-  "timestamp": "2025-12-08T10:30:00Z"
-}
-```
+### Reminders
+| Example Input | What It Does |
+|--------------|--------------|
+| "Remind me to call mom tomorrow at 3pm" | Creates a reminder |
+| "Show my reminders" | Lists all active reminders |
+| "Delete the reminder about..." | Deletes a reminder |
+
+### Tasks
+| Example Input | What It Does |
+|--------------|--------------|
+| "Create a task to review the report" | Creates a new task |
+| "Add a high priority task: fix the bug" | Creates a high priority task |
+| "Show my tasks" | Lists all active tasks |
+| "Complete the task about..." | Marks a task as done |
+
+### Meetings
+| Example Input | What It Does |
+|--------------|--------------|
+| "Schedule a meeting with John tomorrow at 2pm" | Schedules a meeting |
+| "Show my meetings" | Lists upcoming meetings |
+| "Cancel the meeting with..." | Cancels a meeting |
+
+### General
+| Command | What It Does |
+|---------|--------------|
+| `/start` | Welcome message and setup |
+| `/help` | Show all available actions |
+| `/summary` | Show overview of all items |
+| `/reminders` | List all reminders |
+| `/tasks` | List all tasks |
+| `/meetings` | List all meetings |
+
+## How It Works
+
+1. **Input Processing**: Text or voice messages are received
+2. **Audio Transcription**: Voice messages are converted to text using OpenAI Whisper
+3. **Intent Recognition**: The semantic matcher uses embeddings to identify what you want to do
+4. **Parameter Extraction**: The LLM extracts relevant details (dates, names, etc.)
+5. **Clarification**: If confidence is low or info is missing, the bot asks for clarification
+6. **Execution**: The appropriate service handles the request
+7. **Response**: You get a confirmation with the result
 
 ## Development
-
-### Adding a New Action Type
-
-1. Add action definition in `app/config/actions.yaml`
-2. Add handler method in `app/queue_consumer.py`
 
 ### Code Style
 
 ```bash
-black app/*.py                              # Format
-flake8 app/*.py --max-line-length=120       # Lint
-mypy app/*.py --ignore-missing-imports      # Type check
+# Format
+black app/
+
+# Lint
+flake8 app/ --max-line-length=120
+
+# Type check
+mypy app/ --ignore-missing-imports
 ```
+
+### Adding a New Action Type
+
+1. Add the action to `ActionType` enum in `app/models/action.py`
+2. Add action definition in `app/intelligence/semantic_matcher.py`
+3. Add parameter schema in `app/intelligence/parameter_extractor.py`
+4. Add handler in `app/services/assistant_service.py`
 
 ## Production Deployment
 
@@ -184,17 +256,17 @@ For AWS ECS Fargate deployment with GitOps CI/CD, see [DEPLOYMENT.md](DEPLOYMENT
 | Problem | Solution |
 |---------|----------|
 | Bot doesn't start | Verify `TELEGRAM_BOT_TOKEN` is valid |
-| Audio transcription fails | Verify `OPENAI_API_KEY`, check file size (<25MB) |
-| Queue connection fails | Verify Redis/RabbitMQ is running: `redis-cli ping` |
-| Action not matched | Review predefined actions, add more example inputs |
+| Database connection fails | Check PostgreSQL is running and credentials are correct |
+| Action not recognized | The bot will ask for clarification; try rephrasing |
+| Audio not transcribed | Verify `OPENAI_API_KEY`, check file size (<25MB) |
 
 ## Technology Stack
 
-- **Python 3.9+** with asyncio
+- **Python 3.11** with asyncio
 - **python-telegram-bot** for Telegram API
-- **OpenAI API** (Whisper, Embeddings, GPT-3.5)
+- **OpenAI API** (Whisper, Embeddings, GPT-4o-mini)
+- **PostgreSQL 15** with asyncpg
 - **Pydantic** for data validation
-- **Redis/RabbitMQ** for message queue
 - **Docker** for containerization
 - **Terraform** for AWS infrastructure
 - **GitHub Actions** for CI/CD

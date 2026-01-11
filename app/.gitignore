@@ -85,7 +85,7 @@ audio_temp.*
 
 # Project specific
 data/
-models/
+ml_models/
 
 # Config - allow actions.yaml but ignore sensitive configs
 config/*.local.yaml

@@ -1,59 +1,50 @@
 version: '3.8'
 
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: telegram-bot-redis
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: winky-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: winky_bot
     ports:
-      - "6379:6379"
+      - "5432:5432"
     volumes:
-      - redis_data:/data
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 5
 
-  telegram-bot:
+  # Telegram Bot Application
+  bot:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: telegram-bot-app
+    container_name: winky-bot
     depends_on:
-      redis:
+      postgres:
         condition: service_healthy
     environment:
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      QUEUE_TYPE: ${QUEUE_TYPE:-redis}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=winky_bot
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=postgres
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SCHEDULER_CHECK_INTERVAL=${SCHEDULER_CHECK_INTERVAL:-60}
     restart: unless-stopped
-    command: python telegram_bot.py
-
-  queue-consumer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: telegram-bot-consumer
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      QUEUE_TYPE: ${QUEUE_TYPE:-redis}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    restart: unless-stopped
-    command: python queue_consumer.py
 
 volumes:
-  redis_data:
+  postgres_data:
 
 networks:
   default:
-    name: telegram-bot-network
-
+    name: winky-bot-network

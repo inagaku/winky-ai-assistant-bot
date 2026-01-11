@@ -2,14 +2,36 @@
 
 This guide covers deploying the Telegram AI Assistant Bot to AWS ECS Fargate using GitOps with Terraform and GitHub Actions.
 
-## Overview
+## Architecture Overview
 
-The deployment uses a GitOps workflow where:
-- **Git is the source of truth** for code and infrastructure
-- **GitHub Actions** builds Docker images and runs Terraform
-- **Terraform** manages all AWS resources
-- **ECS Fargate** provides serverless container orchestration
-- **Rolling deployments** ensure zero downtime
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         AWS Cloud                                │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │                        VPC                                 │  │
+│  │  ┌─────────────────┐    ┌─────────────────────────────┐   │  │
+│  │  │  Public Subnet  │    │      Private Subnet          │   │  │
+│  │  │                 │    │  ┌─────────────────────────┐ │   │  │
+│  │  │                 │    │  │     ECS Fargate         │ │   │  │
+│  │  │                 │    │  │  ┌─────────────────┐    │ │   │  │
+│  │  │                 │    │  │  │  Bot Container  │    │ │   │  │
+│  │  │                 │    │  │  └─────────────────┘    │ │   │  │
+│  │  │                 │    │  └─────────────────────────┘ │   │  │
+│  │  │                 │    │                              │   │  │
+│  │  │                 │    │  ┌─────────────────────────┐ │   │  │
+│  │  │                 │    │  │    RDS PostgreSQL      │ │   │  │
+│  │  │                 │    │  └─────────────────────────┘ │   │  │
+│  │  └─────────────────┘    └─────────────────────────────┘   │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │     ECR     │  │  Secrets    │  │    CloudWatch Logs      │  │
+│  │  (Images)   │  │   Manager   │  │                         │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Deployment Flow
 
 ```
 Git Push (main) -> GitHub Actions -> Build Image -> Push to ECR -> Terraform Apply -> ECS Rolling Update
@@ -46,6 +68,18 @@ aws dynamodb create-table \
   --key-schema AttributeName=LockID,KeyType=HASH \
   --billing-mode PAY_PER_REQUEST \
   --region us-east-1
+
+# Create RDS PostgreSQL instance
+aws rds create-db-instance \
+  --db-instance-identifier winky-bot-db \
+  --db-instance-class db.t3.micro \
+  --engine postgres \
+  --engine-version 15 \
+  --master-username postgres \
+  --master-user-password YOUR_PASSWORD \
+  --allocated-storage 20 \
+  --vpc-security-group-ids YOUR_SG_ID \
+  --db-subnet-group-name YOUR_SUBNET_GROUP
 ```
 
 ### Step 2: Setup GitHub OIDC Authentication
@@ -81,7 +115,7 @@ aws iam create-role \
 
 ### Step 3: Attach IAM Permissions
 
-Create `iam-policy.json` with these permissions and attach to the role:
+Create `iam-policy.json`:
 
 ```json
 {
@@ -105,7 +139,7 @@ Create `iam-policy.json` with these permissions and attach to the role:
       "Effect": "Allow",
       "Action": [
         "ecs:*", "ec2:Describe*", "ec2:CreateSecurityGroup", "ec2:*SecurityGroup*",
-        "elasticloadbalancing:*", "logs:*", "iam:PassRole", "iam:*Role*"
+        "logs:*", "iam:PassRole", "iam:*Role*", "rds:Describe*"
       ],
       "Resource": "*"
     },
@@ -118,6 +152,11 @@ Create `iam-policy.json` with these permissions and attach to the role:
       "Effect": "Allow",
       "Action": ["dynamodb:*"],
       "Resource": "arn:aws:dynamodb:*:*:table/terraform-locks"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["secretsmanager:GetSecretValue"],
+      "Resource": "arn:aws:secretsmanager:*:*:secret:winky-*"
     }
   ]
 }
@@ -130,29 +169,61 @@ aws iam put-role-policy \
   --policy-document file://iam-policy.json
 ```
 
-### Step 4: Add GitHub Secret
+### Step 4: Store Secrets in AWS Secrets Manager
+
+```bash
+# Store Telegram bot token
+aws secretsmanager create-secret \
+  --name winky-telegram-bot-token \
+  --secret-string "your-telegram-bot-token"
+
+# Store OpenAI API key
+aws secretsmanager create-secret \
+  --name winky-openai-api-key \
+  --secret-string "your-openai-api-key"
+
+# Store database password
+aws secretsmanager create-secret \
+  --name winky-database-password \
+  --secret-string "your-database-password"
+```
+
+### Step 5: Add GitHub Secrets
 
 1. Go to GitHub repo -> Settings -> Secrets -> Actions
-2. Add secret `AWS_ROLE_TO_ASSUME` with value:
-   ```
-   arn:aws:iam::ACCOUNT_ID:role/github-actions-ecs-deploy
-   ```
+2. Add secrets:
+   - `AWS_ROLE_TO_ASSUME`: `arn:aws:iam::ACCOUNT_ID:role/github-actions-ecs-deploy`
 
-### Step 5: Configure Terraform
+### Step 6: Configure Terraform
 
 ```bash
 cd terraform/envs/prod
 
-# Copy example config
-cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+cat > terraform.tfvars << EOF
+vpc_id          = "vpc-xxxxxxxx"
+private_subnets = ["subnet-xxxxxxxx", "subnet-yyyyyyyy"]
+alb_subnets     = ["subnet-aaaaaaaa", "subnet-bbbbbbbb"]
 
-# Edit with your values
-# - vpc_id
-# - private_subnets
-# - alb_subnets
+# Database
+database_host     = "winky-bot-db.xxxxxxxx.us-east-1.rds.amazonaws.com"
+database_port     = 5432
+database_name     = "winky_bot"
+database_user     = "postgres"
+
+# Secrets ARNs
+telegram_token_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789:secret:winky-telegram-bot-token-xxxxx"
+openai_key_secret_arn     = "arn:aws:secretsmanager:us-east-1:123456789:secret:winky-openai-api-key-xxxxx"
+database_password_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789:secret:winky-database-password-xxxxx"
+
+# Resources
+container_cpu    = 512
+container_memory = 1024
+desired_count    = 1
+EOF
 ```
 
-### Step 6: Deploy
+### Step 7: Deploy
 
 ```bash
 # Test locally first
@@ -171,10 +242,10 @@ After initial setup, deployment is automatic:
 
 ```bash
 # Make code changes
-vim app/telegram_bot.py
+vim app/services/reminder_service.py
 
 # Commit and push
-git add . && git commit -m "feat: new feature" && git push origin main
+git add . && git commit -m "feat: improve reminder logic" && git push origin main
 
 # GitHub Actions automatically:
 # 1. Builds Docker image with Git SHA tag
@@ -183,6 +254,20 @@ git add . && git commit -m "feat: new feature" && git push origin main
 # 4. ECS performs rolling update
 # 5. Zero-downtime deployment complete
 ```
+
+## Database Migrations
+
+For schema changes:
+
+```bash
+# Connect to RDS and run migration
+psql -h winky-bot-db.xxxxxxxx.rds.amazonaws.com -U postgres -d winky_bot
+
+# Run migration SQL
+\i app/database/migrations/001_initial_schema.sql
+```
+
+Or use the automatic schema initialization on first run.
 
 ## Rollback
 
@@ -199,14 +284,14 @@ git push origin main
 ```bash
 # Get previous task definition
 PREV=$(($(aws ecs describe-task-definition \
-  --task-definition winky-ai-assistant-telegram-bot \
+  --task-definition winky-ai-assistant-bot \
   --query 'taskDefinition.revision' --output text) - 1))
 
 # Update service
 aws ecs update-service \
   --cluster winky-ai-assistant-cluster \
-  --service winky-ai-assistant-telegram-bot-service \
-  --task-definition winky-ai-assistant-telegram-bot:$PREV
+  --service winky-ai-assistant-bot-service \
+  --task-definition winky-ai-assistant-bot:$PREV
 ```
 
 ## Configuration Reference
@@ -218,34 +303,20 @@ aws ecs update-service \
 | `image_tag` | Yes | Docker image tag (Git SHA) |
 | `vpc_id` | Yes | VPC ID |
 | `private_subnets` | Yes | Private subnet IDs for ECS tasks |
-| `alb_subnets` | Yes | Public subnet IDs for ALB |
+| `database_host` | Yes | RDS PostgreSQL hostname |
+| `database_name` | Yes | Database name |
+| `telegram_token_secret_arn` | Yes | Secrets Manager ARN for Telegram token |
+| `openai_key_secret_arn` | Yes | Secrets Manager ARN for OpenAI key |
 | `container_cpu` | No | CPU units (default: 512) |
 | `container_memory` | No | Memory MB (default: 1024) |
-| `desired_count` | No | Number of tasks (default: 2) |
-
-### Adding Secrets
-
-Store sensitive values in AWS Secrets Manager:
-
-```bash
-aws secretsmanager create-secret \
-  --name telegram-bot-token \
-  --secret-string "your-token"
-```
-
-Reference in `terraform.tfvars`:
-```hcl
-secrets = {
-  TELEGRAM_TOKEN = "arn:aws:secretsmanager:us-east-1:123456789:secret:telegram-bot-token-xxxxx"
-}
-```
+| `desired_count` | No | Number of tasks (default: 1) |
 
 ## Monitoring
 
 ### View Logs
 
 ```bash
-aws logs tail /ecs/winky-ai-assistant/telegram-bot --follow
+aws logs tail /ecs/winky-ai-assistant/bot --follow
 ```
 
 ### Check Service Status
@@ -253,8 +324,14 @@ aws logs tail /ecs/winky-ai-assistant/telegram-bot --follow
 ```bash
 aws ecs describe-services \
   --cluster winky-ai-assistant-cluster \
-  --services winky-ai-assistant-telegram-bot-service \
+  --services winky-ai-assistant-bot-service \
   --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}'
+```
+
+### Check Database Connections
+
+```bash
+psql -h YOUR_RDS_HOST -U postgres -d winky_bot -c "SELECT count(*) FROM users;"
 ```
 
 ## Troubleshooting
@@ -262,26 +339,35 @@ aws ecs describe-services \
 | Problem | Solution |
 |---------|----------|
 | Image not found | Verify ECR image exists: `aws ecr describe-images --repository-name winky-ai-assistant` |
-| Tasks won't start | Check logs: `aws logs tail /ecs/winky-ai-assistant/telegram-bot` |
+| Tasks won't start | Check logs: `aws logs tail /ecs/winky-ai-assistant/bot` |
+| Database connection refused | Check security groups allow PostgreSQL port 5432 |
 | Terraform state locked | Force unlock: `terraform force-unlock LOCK_ID` |
-| ALB health checks failing | Verify security groups allow port 8000 |
+| Secrets not found | Verify secret ARNs and IAM permissions |
 
 ## Cost Estimate
 
-| Configuration | Monthly Cost |
-|--------------|--------------|
-| 1 task (256 CPU, 512MB) | ~$9 |
-| 2 tasks (512 CPU, 1GB) | ~$36 |
-| With ALB | +$16 |
-| Fargate Spot | -70% |
+| Resource | Monthly Cost |
+|----------|--------------|
+| ECS Fargate (1 task, 512 CPU, 1GB) | ~$18 |
+| RDS PostgreSQL (db.t3.micro) | ~$15 |
+| NAT Gateway | ~$32 |
+| CloudWatch Logs | ~$1 |
+| **Total (minimal)** | **~$66** |
+
+### Cost Optimization
+
+- Use Fargate Spot for non-critical workloads (-70%)
+- Use RDS reserved instances for long-term (-40%)
+- Consider Aurora Serverless v2 for variable load
 
 ## Security Best Practices
 
-- Use GitHub OIDC (no long-lived AWS keys)
-- Store secrets in AWS Secrets Manager
-- Keep `terraform.tfvars` in `.gitignore`
-- Use private subnets for ECS tasks
-- Restrict security group ingress
+1. **No hardcoded secrets**: Use AWS Secrets Manager
+2. **GitHub OIDC**: No long-lived AWS access keys
+3. **Private subnets**: ECS tasks in private subnets only
+4. **Security groups**: Minimal required ports only
+5. **Database encryption**: Enable at-rest encryption for RDS
+6. **IAM least privilege**: Minimal permissions for each role
 
 ## File Reference
 
@@ -290,7 +376,8 @@ terraform/
 ├── versions.tf          # Provider config, S3 backend
 ├── variables.tf         # Input variables
 ├── iam.tf              # IAM roles and policies
-├── ecs.tf              # ECS cluster, service, ALB
+├── ecs.tf              # ECS cluster, service, task definition
+├── rds.tf              # RDS PostgreSQL (optional)
 ├── outputs.tf          # Output values
 └── envs/prod/
     ├── main.tf         # Production module
