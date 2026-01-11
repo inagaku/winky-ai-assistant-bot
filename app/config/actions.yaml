@@ -11,8 +11,8 @@ actions:
       - book meeting
     required_parameters:
       - attendee
-      - date
-      - time
+      - datetime_start
+      - datetime_end
     example_inputs:
       - "Schedule a meeting with John tomorrow at 2 PM"
       - "Book an appointment with the team next Monday at 10 AM"
@@ -28,7 +28,7 @@ actions:
       - alert me
     required_parameters:
       - task
-      - time
+      - datetime
     example_inputs:
       - "Remind me to call the dentist tomorrow"
       - "Set a reminder for the meeting in 30 minutes"
@@ -44,6 +44,7 @@ actions:
       - new task
     required_parameters:
       - task_name
+      - datetime
     example_inputs:
       - "Create a task to fix the bug"
       - "Add a task for code review"
@@ -59,8 +60,8 @@ actions:
       - calendar event
     required_parameters:
       - event_name
-      - date
-      - time
+      - datetime_start
+      - datetime_end
     example_inputs:
       - "Block 2 hours on my calendar for the presentation"
       - "Update calendar with lunch plans on Friday"

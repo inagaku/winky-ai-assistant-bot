@@ -1,10 +1,11 @@
 """
 Data models for the Telegram AI Assistant Bot.
 """
-import os
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 import yaml
 from pydantic import BaseModel, Field
@@ -34,12 +35,22 @@ def _create_action_type_enum() -> type:
 ActionType = _create_action_type_enum()
 
 
-class Parameter(BaseModel):
-    """Represents a parameter required for an action."""
-    name: str
-    value: Any
-    type: str = Field(default="string")
-    required: bool = Field(default=True)
+class ActionStatus(str, Enum):
+    """Status of an action in the processing pipeline."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class UserInfo(BaseModel):
+    """Telegram user information."""
+    user_id: int
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    language_code: Optional[str] = None
+    is_bot: bool = False
 
 
 class Action(BaseModel):
@@ -47,15 +58,27 @@ class Action(BaseModel):
     Represents an action to be performed by the upstream service.
     This object is sent via queue to be processed.
     """
-    action_type: str  # Using str instead of ActionType for flexibility
-    user_id: int
-    chat_id: int
+    # Tracking
+    correlation_id: str = Field(default_factory=lambda: str(uuid4()))
+
+    # Action details
+    action_type: str
     original_input: str
     parameters: Dict[str, Any]
     confidence: float = Field(gt=0, le=1.0)
-    embedding: Optional[List[float]] = None
-    timestamp: str
+
+    # User context
+    user_id: int
+    chat_id: int
     message_id: Optional[int] = None
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    language_code: Optional[str] = "en"
+
+    # Metadata
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    source: str = "telegram"  # telegram, api, etc.
+    embedding: Optional[List[float]] = None
 
     def validate_action_type(self) -> bool:
         """Validate that action_type is a valid configured action."""
@@ -65,18 +88,63 @@ class Action(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "action_type": "schedule_meeting",
-                "user_id": 123456,
-                "chat_id": 123456,
-                "original_input": "Schedule a meeting with John tomorrow at 2 PM",
+                "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+                "action_type": "create_reminder",
+                "original_input": "Remind me to buy milk tomorrow at 10:00",
                 "parameters": {
-                    "attendee": "John",
-                    "date": "2025-12-09",
-                    "time": "14:00"
+                    "task": "buy milk",
+                    "datetime": "tomorrow at 10:00"
                 },
                 "confidence": 0.95,
+                "user_id": 123456,
+                "chat_id": 123456,
+                "message_id": 789,
+                "username": "johndoe",
+                "first_name": "John",
+                "language_code": "en",
                 "timestamp": "2025-12-08T10:30:00Z",
-                "message_id": 789
+                "source": "telegram"
+            }
+        }
+
+
+class ActionResponse(BaseModel):
+    """
+    Response from the consumer back to the bot.
+    Contains the result of processing an action.
+    """
+    # Tracking - links back to original action
+    correlation_id: str
+
+    # Destination
+    chat_id: int
+    user_id: int
+    reply_to_message_id: Optional[int] = None
+
+    # Response details
+    action_type: str
+    status: ActionStatus = ActionStatus.COMPLETED
+    message: str  # Human-readable response to send to user
+
+    # Additional data (e.g., created reminder_id, meeting_id, etc.)
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+    # Metadata
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+                "chat_id": 123456,
+                "user_id": 123456,
+                "reply_to_message_id": 789,
+                "action_type": "create_reminder",
+                "status": "completed",
+                "message": "Got it! I'll remind you to buy milk tomorrow at 10:00 AM.",
+                "data": {"reminder_id": "rem_12345"},
+                "timestamp": "2025-12-08T10:30:01Z"
             }
         }
 
@@ -98,6 +166,11 @@ class Message(BaseModel):
     text: Optional[str] = None
     audio_file_id: Optional[str] = None
     timestamp: str
+
+
+# Queue names
+QUEUE_ACTIONS = "actions"
+QUEUE_RESPONSES = "responses"
 
 
 def get_available_actions() -> List[str]:

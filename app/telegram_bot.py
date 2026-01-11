@@ -1,7 +1,9 @@
 """
 Main Telegram bot application.
 Handles user messages and audio, processes them, and publishes actions to queue.
+Listens for responses from the consumer and sends them back to users.
 """
+import asyncio
 import logging
 import os
 from datetime import datetime
@@ -16,7 +18,7 @@ from telegram.ext import (
     filters,
 )
 
-from models import Action, Message
+from models import Action, ActionResponse, ActionStatus, Message, QUEUE_RESPONSES
 from audio_processor import AudioProcessor
 from action_matcher import ActionMatcher
 from queue_manager import create_queue_manager
@@ -52,9 +54,11 @@ class TelegramAIBot:
         self.audio_processor = AudioProcessor(api_key=openai_api_key)
         self.action_matcher = ActionMatcher(api_key=openai_api_key)
         self.queue_manager = create_queue_manager(queue_type=queue_type)
+        self.response_queue_manager = create_queue_manager(queue_type=queue_type)
 
         # Telegram application
         self.application: Optional[Application] = None
+        self._response_listener_task: Optional[asyncio.Task] = None
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
@@ -110,7 +114,7 @@ class TelegramAIBot:
             if success:
                 await update.message.reply_text(
                     f"✅ Got it! I understood you want to:\n"
-                    f"*Action*: `{action_type.value}`\n"
+                    f"*Action*: `{action_type}`\n"
                     f"*Confidence*: {confidence:.0%}\n\n"
                     f"Processing your request...",
                     parse_mode="Markdown"
@@ -215,15 +219,11 @@ class TelegramAIBot:
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
         help_text = """
-🤖 *AI Assistant Bot Help*
+*AI Assistant Bot Help*
 
 *Available Actions:*
-• `send_message` - Send a message to someone
 • `schedule_meeting` - Schedule a meeting with attendees
 • `create_reminder` - Create a reminder for later
-• `get_weather` - Get weather information
-• `search_information` - Search for information online
-• `send_email` - Send an email
 • `create_task` - Create a task
 • `update_calendar` - Update your calendar
 
@@ -232,16 +232,56 @@ class TelegramAIBot:
 2. The bot will transcribe audio to text
 3. It will understand what action you want
 4. Parameters will be extracted automatically
-5. The action will be sent to the processing queue
+5. You'll receive a confirmation once processed
 
 *Examples:*
 • "Schedule a meeting with John tomorrow at 2 PM"
 • "Remind me to call the dentist on Friday"
-• "Send an email to team@example.com about the project"
-• "What's the weather in New York?"
+• "Create a task to review the document"
+• "Block 2 hours on my calendar for the presentation"
         """
         await update.message.reply_text(help_text, parse_mode="Markdown")
 
+    async def _handle_response(self, response_data: dict):
+        """
+        Handle a response from the consumer queue.
+
+        Args:
+            response_data: Response data dict from the queue.
+        """
+        try:
+            response = ActionResponse(**response_data)
+            logger.info(f"Received response for {response.action_type} (correlation_id: {response.correlation_id})")
+
+            # Determine status emoji
+            if response.status == ActionStatus.COMPLETED:
+                status_emoji = "✅"
+            elif response.status == ActionStatus.FAILED:
+                status_emoji = "❌"
+            else:
+                status_emoji = "⏳"
+
+            # Send message to user
+            await self.application.bot.send_message(
+                chat_id=response.chat_id,
+                text=f"{status_emoji} {response.message}",
+                reply_to_message_id=response.reply_to_message_id
+            )
+
+            logger.info(f"Sent response to chat {response.chat_id}")
+
+        except Exception as e:
+            logger.error(f"Error handling response: {e}", exc_info=True)
+
+    async def _start_response_listener(self):
+        """Start listening for responses from the consumer."""
+        try:
+            logger.info(f"Starting response listener on queue: {QUEUE_RESPONSES}")
+            await self.response_queue_manager.subscribe(QUEUE_RESPONSES, self._handle_response)
+        except asyncio.CancelledError:
+            logger.info("Response listener cancelled")
+        except Exception as e:
+            logger.error(f"Error in response listener: {e}", exc_info=True)
 
     def run(self):
         """Start the bot (synchronous entry point)."""
@@ -274,6 +314,9 @@ class TelegramAIBot:
         try:
             await self.queue_manager.connect()
             logger.info("Connected to message queue")
+
+            # Start the response listener as a background task in the running event loop
+            self._response_listener_task = asyncio.create_task(self._start_response_listener())
         except Exception as e:
             logger.error(f"Failed to connect to queue: {e}", exc_info=True)
             raise
@@ -281,6 +324,14 @@ class TelegramAIBot:
     async def _post_shutdown(self, application: Application):
         """Called after application is shutdown."""
         try:
+            # Cancel and await the response listener task if running
+            if self._response_listener_task:
+                self._response_listener_task.cancel()
+                try:
+                    await self._response_listener_task
+                except asyncio.CancelledError:
+                    logger.info("Response listener task cancelled")
+
             await self.queue_manager.disconnect()
             logger.info("Disconnected from message queue")
         except Exception as e:

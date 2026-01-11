@@ -167,7 +167,8 @@ class ActionMatcher:
         try:
             extraction_prompt = f"""
 Extract parameters from the user input for a {action_type} action.
-Required parameters: {', '.join(action_schema.required_parameters)}
+Required parameters: {', '.join(action_schema.required_parameters)}.
+- `datetime.*` parameters should be in the same form (more probably human text) as they presented.
 User input: "{user_input}"
 
 Return a JSON object with the extracted parameters.
