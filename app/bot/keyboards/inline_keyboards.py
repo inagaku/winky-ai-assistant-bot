@@ -179,7 +179,6 @@ class InlineKeyboards:
             ],
             [
                 InlineKeyboardButton(text="🌍 Africa", callback_data="tz_region:africa"),
-                InlineKeyboardButton(text="🕐 UTC", callback_data="tz:UTC"),
             ],
         ])
 
