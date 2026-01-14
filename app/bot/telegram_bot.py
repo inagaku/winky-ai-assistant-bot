@@ -97,10 +97,11 @@ class TelegramBot:
         application.add_handler(TelegramCommandHandler("start", self.command_handler.start))
         application.add_handler(TelegramCommandHandler("help", self.command_handler.help))
         application.add_handler(TelegramCommandHandler("summary", self.command_handler.summary))
+        application.add_handler(TelegramCommandHandler("settings", self.command_handler.settings))
+
         application.add_handler(TelegramCommandHandler("reminders", self.command_handler.reminders))
         application.add_handler(TelegramCommandHandler("tasks", self.command_handler.tasks))
         application.add_handler(TelegramCommandHandler("meetings", self.command_handler.meetings))
-        application.add_handler(TelegramCommandHandler("settings", self.command_handler.settings))
 
         # Register message handlers
         application.add_handler(

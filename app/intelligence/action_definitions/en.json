@@ -1,0 +1,113 @@
+{
+  "CREATE_REMINDER": {
+    "keywords": ["remind", "reminder", "remember", "don't forget", "alert me", "notify me"],
+    "description": "Create a reminder for a task or event",
+    "examples": [
+      "remind me to call mom",
+      "set a reminder for the meeting",
+      "remember to buy groceries",
+      "don't forget to submit the report"
+    ]
+  },
+  "LIST_REMINDERS": {
+    "keywords": ["show reminders", "list reminders", "my reminders", "what reminders"],
+    "description": "Show all active reminders",
+    "examples": [
+      "show my reminders",
+      "what reminders do I have",
+      "list my reminders"
+    ]
+  },
+  "DELETE_REMINDER": {
+    "keywords": ["delete reminder", "remove reminder", "cancel reminder"],
+    "description": "Delete a reminder",
+    "examples": [
+      "delete my reminder",
+      "remove the reminder about",
+      "cancel the reminder"
+    ]
+  },
+  "CREATE_TASK": {
+    "keywords": ["task", "todo", "to-do", "create task", "add task", "new task"],
+    "description": "Create a new task or todo item",
+    "examples": [
+      "create a task to fix the bug",
+      "add task review the code",
+      "new task prepare presentation",
+      "todo write documentation"
+    ]
+  },
+  "LIST_TASKS": {
+    "keywords": ["show tasks", "list tasks", "my tasks", "what tasks", "todos"],
+    "description": "Show all active tasks",
+    "examples": [
+      "show my tasks",
+      "what tasks do I have",
+      "list my todos"
+    ]
+  },
+  "COMPLETE_TASK": {
+    "keywords": ["complete task", "done task", "finish task", "mark done", "mark complete"],
+    "description": "Mark a task as completed",
+    "examples": [
+      "mark task as done",
+      "complete the task",
+      "I finished the task"
+    ]
+  },
+  "DELETE_TASK": {
+    "keywords": ["delete task", "remove task", "cancel task"],
+    "description": "Delete a task",
+    "examples": [
+      "delete the task",
+      "remove task",
+      "cancel that task"
+    ]
+  },
+  "SCHEDULE_MEETING": {
+    "keywords": ["meeting", "schedule", "appointment", "book", "set up meeting"],
+    "description": "Schedule a meeting with participants",
+    "examples": [
+      "schedule a meeting with John",
+      "book an appointment for tomorrow",
+      "set up a meeting at 2pm"
+    ]
+  },
+  "LIST_MEETINGS": {
+    "keywords": ["show meetings", "list meetings", "my meetings", "calendar", "agenda"],
+    "description": "Show upcoming meetings",
+    "examples": [
+      "show my meetings",
+      "what meetings do I have",
+      "show my calendar",
+      "what's on my agenda"
+    ]
+  },
+  "CANCEL_MEETING": {
+    "keywords": ["cancel meeting", "delete meeting", "remove meeting"],
+    "description": "Cancel a scheduled meeting",
+    "examples": [
+      "cancel the meeting",
+      "delete meeting with John"
+    ]
+  },
+  "SHOW_SUMMARY": {
+    "keywords": ["summary", "overview", "what's up", "status", "dashboard"],
+    "description": "Show a summary of all items",
+    "examples": [
+      "show my summary",
+      "give me an overview",
+      "what's on my plate",
+      "show my dashboard"
+    ]
+  },
+  "HELP": {
+    "keywords": ["help", "how to", "what can you do", "commands"],
+    "description": "Show help information",
+    "examples": [
+      "help",
+      "what can you do",
+      "show commands"
+    ]
+  }
+}

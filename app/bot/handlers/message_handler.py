@@ -80,6 +80,7 @@ class MessageHandler:
             last_name=telegram_user.last_name,
             language_code=telegram_user.language_code,
         )
+        locale = user.preferences.language
 
         # Resolve intent
         result = await self.intent_resolver.resolve(
@@ -87,6 +88,7 @@ class MessageHandler:
             user_id=telegram_user.id,
             chat_id=update.effective_chat.id,
             message_id=update.message.message_id,
+            locale=locale,
         )
 
         # Handle result
@@ -153,6 +155,7 @@ class MessageHandler:
                 user_id=telegram_user.id,
                 chat_id=update.effective_chat.id,
                 message_id=update.message.message_id,
+                locale=locale,
             )
 
             if isinstance(result, ClarificationRequest):

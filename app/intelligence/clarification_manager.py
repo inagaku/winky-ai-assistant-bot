@@ -10,6 +10,7 @@ from app.models import (
     ClarificationType,
     ParsedAction,
 )
+from app.i18n import t
 
 from .parameter_extractor import ParameterExtractor
 
@@ -31,6 +32,7 @@ class ClarificationManager:
         intent: ActionIntent,
         parameters: dict,
         alternatives: Optional[List[Tuple[ActionType, float]]] = None,
+        locale: str = "en",
     ) -> Union[ParsedAction, ClarificationRequest]:
         """
         Check if clarification is needed and return either a ready action or clarification request.
@@ -40,18 +42,18 @@ class ClarificationManager:
         """
         # Case 1: Very low confidence - we're not sure what the user wants
         if intent.confidence < self.LOW_CONFIDENCE_THRESHOLD:
-            return self._request_action_confirmation(intent, alternatives)
+            return self._request_action_confirmation(intent, alternatives, locale)
 
         # Case 2: Medium confidence - ask for confirmation
         if intent.confidence < self.HIGH_CONFIDENCE_THRESHOLD:
-            return self._request_action_confirmation(intent, alternatives)
+            return self._request_action_confirmation(intent, alternatives, locale)
 
         # Case 3: High confidence but missing required parameters
         missing_params = self.parameter_extractor.get_missing_parameters(
             intent.action_type, parameters
         )
         if missing_params:
-            return self._request_missing_parameter(intent, parameters, missing_params[0])
+            return self._request_missing_parameter(intent, parameters, missing_params[0], locale)
 
         # Case 4: Ready to execute - return as ParsedAction placeholder
         # The actual ParsedAction will be created by IntentResolver
@@ -61,39 +63,43 @@ class ClarificationManager:
         self,
         intent: ActionIntent,
         alternatives: Optional[List[Tuple[ActionType, float]]] = None,
+        locale: str = "en",
     ) -> ClarificationRequest:
         """Request confirmation for the detected action."""
-        action_descriptions = {
-            ActionType.CREATE_REMINDER: "create a reminder",
-            ActionType.LIST_REMINDERS: "show your reminders",
-            ActionType.DELETE_REMINDER: "delete a reminder",
-            ActionType.CREATE_TASK: "create a task",
-            ActionType.LIST_TASKS: "show your tasks",
-            ActionType.COMPLETE_TASK: "complete a task",
-            ActionType.DELETE_TASK: "delete a task",
-            ActionType.SCHEDULE_MEETING: "schedule a meeting",
-            ActionType.LIST_MEETINGS: "show your meetings",
-            ActionType.CANCEL_MEETING: "cancel a meeting",
-            ActionType.SHOW_SUMMARY: "show your summary",
-            ActionType.HELP: "show help",
+        # Map action types to translation keys
+        action_translation_keys = {
+            ActionType.CREATE_REMINDER: "action_create_reminder",
+            ActionType.LIST_REMINDERS: "action_list_reminders",
+            ActionType.DELETE_REMINDER: "action_delete_reminder",
+            ActionType.CREATE_TASK: "action_create_task",
+            ActionType.LIST_TASKS: "action_list_tasks",
+            ActionType.COMPLETE_TASK: "action_complete_task",
+            ActionType.DELETE_TASK: "action_delete_task",
+            ActionType.SCHEDULE_MEETING: "action_schedule_meeting",
+            ActionType.LIST_MEETINGS: "action_list_meetings",
+            ActionType.CANCEL_MEETING: "action_cancel_meeting",
+            ActionType.SHOW_SUMMARY: "action_show_summary",
+            ActionType.HELP: "action_help",
         }
 
-        primary_action = action_descriptions.get(
-            intent.action_type, str(intent.action_type.value)
-        )
+        action_key = action_translation_keys.get(intent.action_type)
+        primary_action = t(action_key, locale=locale) if action_key else str(intent.action_type.value)
 
         # Build options from alternatives
-        options = [f"Yes, {primary_action}"]
+        yes_text = t("btn_yes", locale=locale)
+        options = [f"{yes_text}, {primary_action}"]
         if alternatives:
             for alt_action, score in alternatives[1:3]:  # Top 2 alternatives
                 if score > 0.4:  # Only show reasonable alternatives
-                    alt_desc = action_descriptions.get(alt_action, str(alt_action.value))
-                    options.append(f"No, {alt_desc}")
+                    alt_key = action_translation_keys.get(alt_action)
+                    alt_desc = t(alt_key, locale=locale) if alt_key else str(alt_action.value)
+                    no_text = t("btn_cancel", locale=locale)
+                    options.append(f"{no_text}, {alt_desc}")
 
-        options.append("Something else")
+        options.append(t("btn_something_else", locale=locale))
 
         confidence_pct = int(intent.confidence * 100)
-        message = f"I'm {confidence_pct}% sure you want to {primary_action}. Is that correct?"
+        message = t("clarify_confirm", locale=locale, confidence_pct=confidence_pct, action=primary_action)
 
         return ClarificationRequest(
             type=ClarificationType.CONFIRM_ACTION,
@@ -107,30 +113,33 @@ class ClarificationManager:
         intent: ActionIntent,
         current_params: dict,
         missing_param: str,
+        locale: str = "en",
     ) -> ClarificationRequest:
         """Request a missing required parameter."""
-        # User-friendly parameter prompts
-        param_prompts = {
-            "title": "What's the title?",
-            "description": "What should I do?",
-            "datetime": "When should this be?",
-            "datetime_start": "When should this start?",
-            "datetime_end": "When should this end?",
-            "participants": "Who should attend?",
+        # User-friendly parameter prompts (translation keys)
+        param_prompt_keys = {
+            "title": "param_prompt_title",
+            "description": "param_prompt_description",
+            "datetime": "param_prompt_datetime",
+            "datetime_start": "param_prompt_datetime_start",
+            "datetime_end": "param_prompt_datetime_end",
+            "participants": "param_prompt_participants",
         }
 
-        message = param_prompts.get(
-            missing_param, f"What should the {missing_param} be?"
-        )
+        prompt_key = param_prompt_keys.get(missing_param)
+        if prompt_key:
+            message = t(prompt_key, locale=locale)
+        else:
+            message = t("param_prompt_generic", locale=locale, param=missing_param)
 
         # Provide helpful time options for datetime parameters
         options = []
         if "datetime" in missing_param.lower():
             options = [
-                "In 1 hour",
-                "Tomorrow morning",
-                "Tomorrow afternoon",
-                "Next week",
+                t("time_option_1hour", locale=locale),
+                t("time_option_tomorrow_morning", locale=locale),
+                t("time_option_tomorrow_afternoon", locale=locale),
+                t("time_option_next_week", locale=locale),
             ]
 
         return ClarificationRequest(

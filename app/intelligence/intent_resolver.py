@@ -10,6 +10,7 @@ from app.models import (
     ClarificationRequest,
     ParsedAction,
 )
+from app.i18n import t
 
 from .semantic_matcher import SemanticMatcher
 from .parameter_extractor import ParameterExtractor
@@ -49,6 +50,7 @@ class IntentResolver:
         chat_id: int,
         message_id: Optional[int] = None,
         skip_clarification: bool = False,
+        locale: str = "en",
     ) -> Union[ParsedAction, ClarificationRequest]:
         """
         Resolve user input to an action or clarification request.
@@ -59,6 +61,7 @@ class IntentResolver:
             chat_id: Telegram chat ID
             message_id: Original message ID for replies
             skip_clarification: If True, skip clarification checks (for high-trust scenarios)
+            locale: User's language preference for messages
 
         Returns:
             ParsedAction if ready to execute, ClarificationRequest if clarification needed
@@ -69,14 +72,17 @@ class IntentResolver:
         logger.info(f"Resolving intent for: '{user_input[:100]}...'")
 
         # Step 1: Match to action type
-        intent = await self.semantic_matcher.match(user_input)
+        intent = await self.semantic_matcher.match(user_input, locale=locale)
 
         # Handle unknown/unmatched input
         if intent.action_type == ActionType.UNKNOWN or intent.confidence < 0.3:
             return ClarificationRequest(
                 type="ambiguous_input",
-                message="I'm not sure what you'd like me to do. Could you try rephrasing or use /help to see what I can do?",
-                options=["Show help", "Show my summary"],
+                message=t("clarify_ambiguous", locale=locale),
+                options=[
+                    t("time_option_show_help", locale=locale),
+                    t("time_option_show_summary", locale=locale),
+                ],
             )
 
         # Step 2: Extract parameters
@@ -95,10 +101,10 @@ class IntentResolver:
         # Step 4: Check if clarification is needed (unless skipped)
         if not skip_clarification:
             # Get alternatives for potential clarification
-            alternatives = await self.semantic_matcher.match_with_alternatives(user_input, top_n=3)
+            alternatives = await self.semantic_matcher.match_with_alternatives(user_input, top_n=3, locale=locale)
 
             clarification = await self.clarification_manager.check_and_clarify(
-                intent, parameters, alternatives
+                intent, parameters, alternatives, locale=locale
             )
 
             if clarification is not None:
@@ -119,6 +125,7 @@ class IntentResolver:
         message_id: Optional[int] = None,
         previous_clarification: Optional[ClarificationRequest] = None,
         clarification_response: Optional[str] = None,
+        locale: str = "en",
     ) -> Union[ParsedAction, ClarificationRequest]:
         """
         Resolve with context from a previous clarification.
@@ -135,6 +142,7 @@ class IntentResolver:
                 chat_id=chat_id,
                 message_id=message_id,
                 skip_clarification=True,  # User already provided clarification
+                locale=locale,
             )
 
         return await self.resolve(
@@ -142,6 +150,7 @@ class IntentResolver:
             user_id=user_id,
             chat_id=chat_id,
             message_id=message_id,
+            locale=locale,
         )
 
     async def get_action_suggestions(self, partial_input: str) -> list:

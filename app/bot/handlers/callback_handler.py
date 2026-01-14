@@ -92,7 +92,7 @@ class CallbackHandler:
             language = callback_data[5:]  # Remove "lang:" prefix
             await self._handle_language_selection(query, context, user, language)
         elif callback_data == "cancel":
-            await query.edit_message_text("Cancelled.")
+            await query.edit_message_text(t("cancelled", locale=user.preferences.language))
         else:
             logger.warning(f"Unknown callback data: {callback_data}")
 
@@ -104,6 +104,8 @@ class CallbackHandler:
         option_text: str,
     ) -> None:
         """Handle when user selects an option from clarification."""
+        locale = user.preferences.language
+
         # Process the option as a new input
         result = await self.intent_resolver.resolve(
             user_input=option_text,
@@ -111,6 +113,7 @@ class CallbackHandler:
             chat_id=query.message.chat_id,
             message_id=query.message.message_id,
             skip_clarification=True,  # User already made a choice
+            locale=locale,
         )
 
         if hasattr(result, 'intent'):
@@ -135,14 +138,16 @@ class CallbackHandler:
         action_type = parts[0]
         item_id = parts[1] if len(parts) > 1 else None
 
+        locale = user.preferences.language
+
         if not item_id:
-            await query.edit_message_text("Invalid action.")
+            await query.edit_message_text(t("invalid_action", locale=locale))
             return
 
         try:
             item_uuid = UUID(item_id)
         except ValueError:
-            await query.edit_message_text("Invalid ID format.")
+            await query.edit_message_text(t("invalid_id", locale=locale))
             return
 
         # Handle specific actions
@@ -156,9 +161,9 @@ class CallbackHandler:
                 except Exception as e:
                     logger.warning(f"Could not delete message: {e}")
                     new_time = reminder.remind_at.strftime("%H:%M")
-                    await query.edit_message_text(f"😴 Snoozed until {new_time}")
+                    await query.edit_message_text(f"😴 {t('reminder_snoozed', locale=locale, time=new_time)}")
             else:
-                await query.edit_message_text("Reminder not found.")
+                await query.edit_message_text(t("reminder_not_found", locale=locale))
 
         elif action_type == "complete":
             # Could be a reminder "Done" or a task "Complete"
@@ -166,7 +171,7 @@ class CallbackHandler:
             reminder = await self.reminder_service.mark_sent(item_uuid)
             if reminder:
                 # Update message to show completed, remove buttons
-                completed_text = f"~~{reminder.title}~~\n\n✅ _Completed_"
+                completed_text = t("reminder_completed_text", locale=locale, title=reminder.title)
                 await query.edit_message_text(
                     completed_text,
                     reply_markup=None,
@@ -176,37 +181,37 @@ class CallbackHandler:
                 # Try as task
                 task = await self.task_service.complete_task(item_uuid)
                 if task:
-                    completed_text = f"~~{task.title}~~\n\n✅ _Task completed_"
+                    completed_text = t("task_completed_text", locale=locale, title=task.title)
                     await query.edit_message_text(
                         completed_text,
                         reply_markup=None,
                         parse_mode="Markdown",
                     )
                 else:
-                    await query.edit_message_text("Item not found.")
+                    await query.edit_message_text(t("item_not_found", locale=locale))
 
         elif action_type == "cancel":
             # Cancel a meeting
             meeting = await self.assistant_service.meeting_service.cancel_meeting(item_uuid)
             if meeting:
-                await query.edit_message_text(f"❌ Meeting \"{meeting.title}\" cancelled.")
+                await query.edit_message_text(f"❌ {t('meeting_cancelled', locale=locale, title=meeting.title)}")
             else:
-                await query.edit_message_text("Meeting not found.")
+                await query.edit_message_text(t("meeting_not_found", locale=locale))
 
         elif action_type == "edit":
             # Edit functionality - for now just acknowledge
-            await query.edit_message_text("Edit feature coming soon. Please create a new item.")
+            await query.edit_message_text(t("edit_coming_soon", locale=locale))
 
         elif action_type == "delete":
             # Delete a task
             deleted = await self.task_service.delete_task(item_uuid)
             if deleted:
-                await query.edit_message_text("🗑️ Task deleted.")
+                await query.edit_message_text(f"🗑️ {t('task_deleted', locale=locale)}")
             else:
-                await query.edit_message_text("Task not found.")
+                await query.edit_message_text(t("task_not_found", locale=locale))
 
         else:
-            await query.edit_message_text(f"Unknown action: {action_type}")
+            await query.edit_message_text(t("unknown_action", locale=locale, action=action_type))
 
     async def _handle_clarification_response(
         self,
@@ -216,11 +221,13 @@ class CallbackHandler:
         callback_data: str,
     ) -> None:
         """Handle user response to a clarification request."""
+        locale = user.preferences.language
+
         # Parse: clarify:{action_id}:{option_index}:{response_type}
         parts = callback_data.split(":")
         if len(parts) < 4:
             logger.error(f"Invalid clarification callback data: {callback_data}")
-            await query.edit_message_text("Something went wrong. Please try again.")
+            await query.edit_message_text(t("something_went_wrong_generic", locale=locale))
             return
 
         action_id = parts[1]
@@ -232,9 +239,7 @@ class CallbackHandler:
 
         if not pending_data:
             logger.warning(f"No pending action found for action_id: {action_id}")
-            await query.edit_message_text(
-                "This action has expired. Please try again with a new message."
-            )
+            await query.edit_message_text(t("expired_action", locale=locale))
             return
 
         if response_type == "confirm":
@@ -248,24 +253,20 @@ class CallbackHandler:
                 await query.edit_message_text(f"{emoji} {action_result.message}")
             else:
                 logger.error(f"Invalid original_action for action_id: {action_id}")
-                await query.edit_message_text("Something went wrong. Please try again.")
+                await query.edit_message_text(t("something_went_wrong_generic", locale=locale))
 
         elif response_type == "alt":
             # User selected an alternative action
             # For now, ask them to rephrase
-            await query.edit_message_text(
-                "Please describe what you'd like to do in a new message."
-            )
+            await query.edit_message_text(t("describe_what_to_do", locale=locale))
 
         elif response_type == "cancel":
             # User wants to cancel or do something else
-            await query.edit_message_text(
-                "No problem! Please describe what you'd like to do."
-            )
+            await query.edit_message_text(t("no_problem", locale=locale))
 
         else:
             logger.warning(f"Unknown clarification response type: {response_type}")
-            await query.edit_message_text("Please try again with a new message.")
+            await query.edit_message_text(t("try_again", locale=locale))
 
         # Clean up the pending action
         if action_id in pending_actions:

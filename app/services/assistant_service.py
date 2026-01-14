@@ -13,6 +13,7 @@ from app.models import (
     User,
 )
 from app.repositories import UserRepository
+from app.i18n import t
 
 from .user_service import UserService
 from .reminder_service import ReminderService
@@ -63,13 +64,15 @@ class AssistantService(BaseService):
             f"Executing action {action.action_type} for user {user.telegram_id}"
         )
 
+        locale = user.preferences.language
+
         try:
             # Route to appropriate handler
             handler = self._get_handler(action.action_type)
             if not handler:
                 return ActionResult(
                     success=False,
-                    message=f"Unknown action type: {action.action_type}",
+                    message=t("unknown_action", locale=locale, action=str(action.action_type)),
                 )
 
             result = await handler(action, user)
@@ -82,7 +85,7 @@ class AssistantService(BaseService):
             action.status = ActionStatus.FAILED
             return ActionResult(
                 success=False,
-                message=f"Sorry, something went wrong: {str(e)}",
+                message=t("something_went_wrong", locale=locale, error=str(e)),
             )
 
     def _get_handler(self, action_type: ActionType):
@@ -112,6 +115,7 @@ class AssistantService(BaseService):
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle creating a reminder."""
+        locale = user.preferences.language
         reminder = await self.reminder_service.create_from_params(
             user_id=user.id,
             params=action.parameters,
@@ -120,10 +124,10 @@ class AssistantService(BaseService):
         time_str = reminder.remind_at.strftime("%Y-%m-%d %H:%M")
 
         # Build a helpful message showing when they'll be notified
-        message = f"Got it! I'll remind you about \"{reminder.title}\" at {time_str}."
+        message = t("reminder_created", locale=locale, title=reminder.title, time=time_str)
 
         # If description contains action time info, include it
-        if reminder.description and "Action scheduled for" in reminder.description:
+        if reminder.description and reminder.description.startswith("Action scheduled"):
             message += f"\n\n{reminder.description}"
 
         return ActionResult(
@@ -136,8 +140,9 @@ class AssistantService(BaseService):
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle listing reminders."""
+        locale = user.preferences.language
         reminders = await self.reminder_service.get_user_reminders(user.id)
-        message = self.reminder_service.format_reminder_list(reminders)
+        message = self.reminder_service.format_reminder_list(reminders, locale=locale)
         return ActionResult(
             success=True,
             message=message,
@@ -148,38 +153,42 @@ class AssistantService(BaseService):
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle deleting a reminder."""
+        locale = user.preferences.language
         reminder_id = action.parameters.get("reminder_id")
         if not reminder_id:
             return ActionResult(
                 success=False,
-                message="Which reminder should I delete? Please specify the reminder.",
+                message=t("which_reminder_delete", locale=locale),
             )
 
         try:
             reminder_uuid = UUID(reminder_id)
             deleted = await self.reminder_service.delete_reminder(reminder_uuid)
             if deleted:
-                return ActionResult(success=True, message="Reminder deleted.")
-            return ActionResult(success=False, message="Reminder not found.")
+                return ActionResult(success=True, message=t("reminder_deleted", locale=locale))
+            return ActionResult(success=False, message=t("reminder_not_found", locale=locale))
         except ValueError:
-            return ActionResult(success=False, message="Invalid reminder ID.")
+            return ActionResult(success=False, message=t("invalid_id", locale=locale))
 
     # Task handlers
     async def _handle_create_task(
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle creating a task."""
+        locale = user.preferences.language
         task = await self.task_service.create_from_params(
             user_id=user.id,
             params=action.parameters,
             user_timezone=user.preferences.timezone,
         )
-        due_str = ""
         if task.due_date:
-            due_str = f" (due: {task.due_date.strftime('%Y-%m-%d')})"
+            due_str = task.due_date.strftime('%Y-%m-%d')
+            message = t("task_created_with_due", locale=locale, title=task.title, due_date=due_str)
+        else:
+            message = t("task_created", locale=locale, title=task.title)
         return ActionResult(
             success=True,
-            message=f"Task created: \"{task.title}\"{due_str}",
+            message=message,
             data={"task_id": str(task.id)},
         )
 
@@ -187,8 +196,9 @@ class AssistantService(BaseService):
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle listing tasks."""
+        locale = user.preferences.language
         tasks = await self.task_service.get_user_tasks(user.id)
-        message = self.task_service.format_task_list(tasks)
+        message = self.task_service.format_task_list(tasks, locale=locale)
         return ActionResult(
             success=True,
             message=message,
@@ -199,11 +209,12 @@ class AssistantService(BaseService):
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle completing a task."""
+        locale = user.preferences.language
         task_id = action.parameters.get("task_id")
         if not task_id:
             return ActionResult(
                 success=False,
-                message="Which task should I mark as complete?",
+                message=t("which_task_complete", locale=locale),
             )
 
         try:
@@ -212,49 +223,54 @@ class AssistantService(BaseService):
             if task:
                 return ActionResult(
                     success=True,
-                    message=f"Task \"{task.title}\" marked as complete! Great job!",
+                    message=t("task_completed", locale=locale, title=task.title),
                 )
-            return ActionResult(success=False, message="Task not found.")
+            return ActionResult(success=False, message=t("task_not_found", locale=locale))
         except ValueError:
-            return ActionResult(success=False, message="Invalid task ID.")
+            return ActionResult(success=False, message=t("invalid_id", locale=locale))
 
     async def _handle_delete_task(
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle deleting a task."""
+        locale = user.preferences.language
         task_id = action.parameters.get("task_id")
         if not task_id:
             return ActionResult(
                 success=False,
-                message="Which task should I delete?",
+                message=t("which_task_delete", locale=locale),
             )
 
         try:
             task_uuid = UUID(task_id)
             deleted = await self.task_service.delete_task(task_uuid)
             if deleted:
-                return ActionResult(success=True, message="Task deleted.")
-            return ActionResult(success=False, message="Task not found.")
+                return ActionResult(success=True, message=t("task_deleted", locale=locale))
+            return ActionResult(success=False, message=t("task_not_found", locale=locale))
         except ValueError:
-            return ActionResult(success=False, message="Invalid task ID.")
+            return ActionResult(success=False, message=t("invalid_id", locale=locale))
 
     # Meeting handlers
     async def _handle_schedule_meeting(
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle scheduling a meeting."""
+        locale = user.preferences.language
         meeting = await self.meeting_service.create_from_params(
             user_id=user.id,
             params=action.parameters,
             user_timezone=user.preferences.timezone,
         )
         time_str = meeting.start_time.strftime("%Y-%m-%d %H:%M")
-        participants_str = ""
         if meeting.participants:
-            participants_str = f" with {', '.join(meeting.participants)}"
+            participants_str = ', '.join(meeting.participants)
+            message = t("meeting_scheduled_with_participants", locale=locale,
+                       title=meeting.title, participants=participants_str, time=time_str)
+        else:
+            message = t("meeting_scheduled", locale=locale, title=meeting.title, time=time_str)
         return ActionResult(
             success=True,
-            message=f"Meeting scheduled: \"{meeting.title}\"{participants_str} at {time_str}",
+            message=message,
             data={"meeting_id": str(meeting.id)},
         )
 
@@ -262,8 +278,9 @@ class AssistantService(BaseService):
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle listing meetings."""
+        locale = user.preferences.language
         meetings = await self.meeting_service.get_user_meetings(user.id)
-        message = self.meeting_service.format_meeting_list(meetings)
+        message = self.meeting_service.format_meeting_list(meetings, locale=locale)
         return ActionResult(
             success=True,
             message=message,
@@ -274,11 +291,12 @@ class AssistantService(BaseService):
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle cancelling a meeting."""
+        locale = user.preferences.language
         meeting_id = action.parameters.get("meeting_id")
         if not meeting_id:
             return ActionResult(
                 success=False,
-                message="Which meeting should I cancel?",
+                message=t("which_meeting_cancel", locale=locale),
             )
 
         try:
@@ -287,57 +305,60 @@ class AssistantService(BaseService):
             if meeting:
                 return ActionResult(
                     success=True,
-                    message=f"Meeting \"{meeting.title}\" has been cancelled.",
+                    message=t("meeting_cancelled", locale=locale, title=meeting.title),
                 )
-            return ActionResult(success=False, message="Meeting not found.")
+            return ActionResult(success=False, message=t("meeting_not_found", locale=locale))
         except ValueError:
-            return ActionResult(success=False, message="Invalid meeting ID.")
+            return ActionResult(success=False, message=t("invalid_id", locale=locale))
 
     # General handlers
     async def _handle_show_summary(
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle showing a summary of all items."""
+        locale = user.preferences.language
         reminders = await self.reminder_service.get_user_reminders(user.id, limit=5)
         tasks = await self.task_service.get_user_tasks(user.id, limit=5)
         meetings = await self.meeting_service.get_upcoming_meetings(user.id)
 
-        lines = [f"Here's your summary, {user.display_name}:", ""]
+        lines = [t("summary_title", locale=locale, name=user.display_name), ""]
 
         # Reminders section
         reminder_count = await self.reminder_service.get_active_count(user.id)
-        lines.append(f"🔔 Reminders ({reminder_count} active):")
+        lines.append(f"🔔 {t('summary_reminders', locale=locale, count=reminder_count)}")
         if reminders:
             for r in reminders[:3]:
                 time_str = r.remind_at.strftime("%m/%d %H:%M")
                 lines.append(f"  • {r.title} - {time_str}")
         else:
-            lines.append("  No active reminders")
+            lines.append(f"  {t('no_active_reminders', locale=locale)}")
         lines.append("")
 
         # Tasks section
         task_count = await self.task_service.get_active_count(user.id)
         overdue = await self.task_service.get_overdue_tasks(user.id)
-        overdue_str = f" ({len(overdue)} overdue)" if overdue else ""
-        lines.append(f"✅ Tasks ({task_count} active{overdue_str}):")
-        if tasks:
-            for t in tasks[:3]:
-                priority_emoji = {"low": "🟢", "medium": "🟡", "high": "🟠", "urgent": "🔴"}
-                emoji = priority_emoji.get(t.priority.value, "⚪")
-                lines.append(f"  {emoji} {t.title}")
+        if overdue:
+            lines.append(f"✅ {t('summary_tasks_overdue', locale=locale, count=task_count, overdue=len(overdue))}")
         else:
-            lines.append("  No active tasks")
+            lines.append(f"✅ {t('summary_tasks', locale=locale, count=task_count)}")
+        if tasks:
+            for task in tasks[:3]:
+                priority_emoji = {"low": "🟢", "medium": "🟡", "high": "🟠", "urgent": "🔴"}
+                emoji = priority_emoji.get(task.priority.value, "⚪")
+                lines.append(f"  {emoji} {task.title}")
+        else:
+            lines.append(f"  {t('no_active_tasks', locale=locale)}")
         lines.append("")
 
         # Meetings section
         meeting_count = await self.meeting_service.get_active_count(user.id)
-        lines.append(f"📅 Upcoming meetings ({meeting_count} scheduled):")
+        lines.append(f"📅 {t('summary_meetings', locale=locale, count=meeting_count)}")
         if meetings:
             for m in meetings[:3]:
                 time_str = m.start_time.strftime("%m/%d %H:%M")
                 lines.append(f"  • {m.title} - {time_str}")
         else:
-            lines.append("  No upcoming meetings")
+            lines.append(f"  {t('no_upcoming_meetings', locale=locale)}")
 
         return ActionResult(
             success=True,
@@ -353,28 +374,17 @@ class AssistantService(BaseService):
         self, action: ParsedAction, user: User
     ) -> ActionResult:
         """Handle help request."""
-        help_text = """Here's what I can help you with:
+        locale = user.preferences.language
+        help_text = f"""{t('help_title', locale=locale)}
 
-🔔 **Reminders**
-• "Remind me to call mom tomorrow at 3pm"
-• "Set a reminder for the meeting in 30 minutes"
-• "Show my reminders"
+🔔 {t('help_reminders', locale=locale)}
 
-✅ **Tasks**
-• "Create a task to review the report"
-• "Add a high priority task: fix the bug"
-• "Show my tasks"
-• "Complete task..."
+✅ {t('help_tasks', locale=locale)}
 
-📅 **Meetings**
-• "Schedule a meeting with John tomorrow at 2pm"
-• "Book an appointment for next Monday"
-• "Show my meetings"
+📅 {t('help_meetings', locale=locale)}
 
-📊 **Summary**
-• "Show my summary"
-• "What's on my agenda?"
+📊 {t('help_summary', locale=locale)}
 
-Just tell me what you need in natural language!"""
+{t('help_footer', locale=locale)}"""
 
         return ActionResult(success=True, message=help_text)
