@@ -243,8 +243,19 @@ class InlineKeyboards:
 
         return InlineKeyboardMarkup(buttons)
 
-    def create_settings_keyboard(self, current_timezone: str) -> InlineKeyboardMarkup:
+    def create_settings_keyboard(
+        self,
+        current_timezone: str,
+        current_language: str,
+    ) -> InlineKeyboardMarkup:
         """Create settings menu keyboard."""
+        # Map language codes to display names
+        language_names = {
+            "en": "English",
+            "ru": "Русский",
+        }
+        lang_display = language_names.get(current_language, current_language)
+
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
@@ -253,6 +264,32 @@ class InlineKeyboards:
                 ),
             ],
             [
+                InlineKeyboardButton(
+                    text=f"🌐 Language: {lang_display}",
+                    callback_data="settings:language"
+                ),
+            ],
+            [
                 InlineKeyboardButton(text="✅ Done", callback_data="settings:done"),
             ],
         ])
+
+    def create_language_keyboard(self) -> InlineKeyboardMarkup:
+        """Create language selection keyboard."""
+        languages = [
+            ("🇬🇧 English", "en"),
+            ("🇷🇺 Русский", "ru"),
+        ]
+
+        buttons = []
+        for label, lang_code in languages:
+            buttons.append([
+                InlineKeyboardButton(text=label, callback_data=f"lang:{lang_code}")
+            ])
+
+        # Add back button
+        buttons.append([
+            InlineKeyboardButton(text="⬅️ Back", callback_data="settings:back")
+        ])
+
+        return InlineKeyboardMarkup(buttons)

@@ -13,6 +13,7 @@ from app.models import ClarificationRequest, ParsedAction
 from app.services import UserService, AssistantService
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
+from app.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +95,24 @@ class MessageHandler:
         elif isinstance(result, ParsedAction):
             await self._execute_action(update, result, user)
         else:
-            await update.message.reply_text(
-                "I'm not sure what you mean. Try /help to see what I can do."
-            )
+            locale = user.preferences.language
+            await update.message.reply_text(t("not_sure", locale=locale))
 
     async def handle_audio(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle voice and audio messages."""
         if not update.effective_user or not update.effective_chat:
             return
+
+        # Get or create user first for language preference
+        telegram_user = update.effective_user
+        user = await self.user_service.get_or_create_user(
+            telegram_id=telegram_user.id,
+            username=telegram_user.username,
+            first_name=telegram_user.first_name,
+            last_name=telegram_user.last_name,
+            language_code=telegram_user.language_code,
+        )
+        locale = user.preferences.language
 
         # Get the audio file
         if update.message.voice:
@@ -135,17 +146,7 @@ class MessageHandler:
             os.unlink(tmp_path)
 
             # Show transcription
-            await update.message.reply_text(f"I heard: \"{transcribed_text}\"")
-
-            # Process as text
-            telegram_user = update.effective_user
-            user = await self.user_service.get_or_create_user(
-                telegram_id=telegram_user.id,
-                username=telegram_user.username,
-                first_name=telegram_user.first_name,
-                last_name=telegram_user.last_name,
-                language_code=telegram_user.language_code,
-            )
+            await update.message.reply_text(t("audio_heard", locale=locale, text=transcribed_text))
 
             result = await self.intent_resolver.resolve(
                 user_input=transcribed_text,
@@ -161,9 +162,7 @@ class MessageHandler:
 
         except Exception as e:
             logger.error(f"Error processing audio: {e}", exc_info=True)
-            await update.message.reply_text(
-                "Sorry, I couldn't process that audio. Please try again or send a text message."
-            )
+            await update.message.reply_text(t("audio_error", locale=locale))
 
     async def _send_clarification(
         self,

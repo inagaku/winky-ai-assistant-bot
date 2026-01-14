@@ -9,6 +9,7 @@ from app.models import ParsedAction
 from app.services import UserService, AssistantService, ReminderService, TaskService
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
+from app.i18n import t
 from .message_handler import PENDING_ACTIONS_KEY
 from .command_handler import ONBOARDING_STATE_KEY
 
@@ -86,6 +87,10 @@ class CallbackHandler:
             # Settings callback
             setting = callback_data[9:]  # Remove "settings:" prefix
             await self._handle_settings_callback(query, context, user, setting)
+        elif callback_data.startswith("lang:"):
+            # Language selection
+            language = callback_data[5:]  # Remove "lang:" prefix
+            await self._handle_language_selection(query, context, user, language)
         elif callback_data == "cancel":
             await query.edit_message_text("Cancelled.")
         else:
@@ -274,16 +279,18 @@ class CallbackHandler:
         region: str,
     ) -> None:
         """Handle timezone region selection."""
+        locale = user.preferences.language
+
         if region == "back":
             # Go back to region selection
             await query.edit_message_text(
-                "Please select your region:",
+                t("select_region", locale=locale),
                 reply_markup=self.keyboards.create_timezone_region_keyboard(),
             )
         else:
             # Show timezones for the selected region
             await query.edit_message_text(
-                f"Select your timezone:",
+                t("select_timezone", locale=locale),
                 reply_markup=self.keyboards.create_timezone_keyboard(region),
             )
 
@@ -295,11 +302,13 @@ class CallbackHandler:
         timezone: str,
     ) -> None:
         """Handle timezone selection."""
+        locale = user.preferences.language
+
         # Update user's timezone
         updated_user = await self.user_service.update_timezone(user.id, timezone)
 
         if not updated_user:
-            await query.edit_message_text("Failed to update timezone. Please try again.")
+            await query.edit_message_text(t("update_failed", locale=locale))
             return
 
         # Check if this is during onboarding
@@ -309,22 +318,51 @@ class CallbackHandler:
             # Complete onboarding
             del context.user_data[ONBOARDING_STATE_KEY]
 
-            completion_message = f"""Your timezone has been set to: {timezone}
-
-You're all set! Here's what you can do:
-- "Remind me to..." - Set reminders
-- "Create a task to..." - Create tasks
-- "Schedule a meeting..." - Schedule meetings
-
-Just tell me what you need in natural language!"""
-
+            completion_message = t("onboarding_complete", locale=locale, timezone=timezone)
             await query.edit_message_text(completion_message)
         else:
-            # Regular settings update
+            # Regular settings update - go back to settings menu
             await query.edit_message_text(
-                f"Timezone updated to: {timezone}",
-                reply_markup=self.keyboards.create_settings_keyboard(timezone),
+                t("timezone_updated", locale=locale, timezone=timezone),
+                reply_markup=self.keyboards.create_settings_keyboard(
+                    current_timezone=timezone,
+                    current_language=user.preferences.language,
+                ),
             )
+
+    async def _handle_language_selection(
+        self,
+        query,
+        context: ContextTypes.DEFAULT_TYPE,
+        user,
+        language: str,
+    ) -> None:
+        """Handle language selection."""
+        # Update user's language
+        updated_user = await self.user_service.update_language(user.id, language)
+
+        if not updated_user:
+            await query.edit_message_text(t("update_failed", locale=user.preferences.language))
+            return
+
+        # Use the NEW language for the confirmation message
+        locale = language
+
+        # Map language codes to display names
+        language_names = {
+            "en": "English",
+            "ru": "Русский",
+        }
+        lang_display = language_names.get(language, language)
+
+        # Go back to settings menu
+        await query.edit_message_text(
+            t("language_updated", locale=locale, language=lang_display),
+            reply_markup=self.keyboards.create_settings_keyboard(
+                current_timezone=user.preferences.timezone,
+                current_language=language,
+            ),
+        )
 
     async def _handle_settings_callback(
         self,
@@ -334,14 +372,31 @@ Just tell me what you need in natural language!"""
         setting: str,
     ) -> None:
         """Handle settings menu callbacks."""
+        locale = user.preferences.language
+
         if setting == "timezone":
             # Show timezone region selection
             await query.edit_message_text(
-                "Select your region:",
+                t("select_region", locale=locale),
                 reply_markup=self.keyboards.create_timezone_region_keyboard(),
+            )
+        elif setting == "language":
+            # Show language selection
+            await query.edit_message_text(
+                t("select_language", locale=locale),
+                reply_markup=self.keyboards.create_language_keyboard(),
+            )
+        elif setting == "back":
+            # Go back to settings menu
+            await query.edit_message_text(
+                t("settings_title", locale=locale, name=user.display_name),
+                reply_markup=self.keyboards.create_settings_keyboard(
+                    current_timezone=user.preferences.timezone,
+                    current_language=user.preferences.language,
+                ),
             )
         elif setting == "done":
             # Close settings menu
             await query.edit_message_text(
-                f"Settings saved. Your timezone is: {user.preferences.timezone}"
+                t("settings_saved", locale=locale, timezone=user.preferences.timezone, language=user.preferences.language)
             )

@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from app.services import UserService, AssistantService
 from app.models import ActionType, ActionIntent, ActionStatus, ParsedAction
 from app.bot.keyboards import InlineKeyboards
+from app.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,11 @@ class CommandHandler:
             language_code=telegram_user.language_code,
         )
 
+        locale = user.preferences.language
+
         if is_new_user:
             # New user - start onboarding with timezone selection
-            welcome_message = f"""Hi {user.display_name}! Welcome to your personal assistant.
-
-I can help you manage reminders, tasks, and meetings - just tell me what you need in natural language.
-
-To get started, please select your timezone so I can schedule reminders at the right time for you:"""
+            welcome_message = t("welcome_new_user", locale=locale, name=user.display_name)
 
             # Store onboarding state
             context.user_data[ONBOARDING_STATE_KEY] = {
@@ -65,16 +64,12 @@ To get started, please select your timezone so I can schedule reminders at the r
             )
         else:
             # Existing user - show standard welcome
-            welcome_message = f"""Welcome back, {user.display_name}!
-
-I can help you manage:
-- Reminders ("Remind me to...")
-- Tasks ("Create a task to...")
-- Meetings ("Schedule a meeting with...")
-
-Your timezone: {user.preferences.timezone}
-
-Use /settings to change your preferences, or /help to see all commands."""
+            welcome_message = t(
+                "welcome_back",
+                locale=locale,
+                name=user.display_name,
+                timezone=user.preferences.timezone,
+            )
 
             await update.message.reply_text(welcome_message)
 
@@ -244,11 +239,13 @@ Use /settings to change your preferences, or /help to see all commands."""
             language_code=telegram_user.language_code,
         )
 
-        settings_message = f"""Settings for {user.display_name}
-
-Tap an option to change it:"""
+        locale = user.preferences.language
+        settings_message = t("settings_title", locale=locale, name=user.display_name)
 
         await update.message.reply_text(
             settings_message,
-            reply_markup=self.keyboards.create_settings_keyboard(user.preferences.timezone),
+            reply_markup=self.keyboards.create_settings_keyboard(
+                current_timezone=user.preferences.timezone,
+                current_language=user.preferences.language,
+            ),
         )
