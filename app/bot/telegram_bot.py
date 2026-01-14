@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from telegram import BotCommand, Update
+from telegram import BotCommand, MenuButtonCommands, Update
 from telegram.ext import (
     Application,
     CommandHandler as TelegramCommandHandler,
@@ -139,7 +139,7 @@ class TelegramBot:
                 pass
 
     async def _set_bot_commands(self) -> None:
-        """Set bot commands for the menu button."""
+        """Set bot commands and menu button."""
         try:
             commands = [
                 BotCommand("start", "Start the bot"),
@@ -152,6 +152,10 @@ class TelegramBot:
             ]
             result = await self.application.bot.set_my_commands(commands)
             logger.info(f"Bot commands registered: {[c.command for c in commands]}, result: {result}")
+
+            # Set menu button to show commands
+            menu_result = await self.application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+            logger.info(f"Menu button set to commands menu, result: {menu_result}")
         except Exception as e:
             logger.error(f"Failed to set bot commands: {e}", exc_info=True)
 
