@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import (
     Application,
     CommandHandler as TelegramCommandHandler,
@@ -138,6 +138,20 @@ class TelegramBot:
             except Exception:
                 pass
 
+    async def _set_bot_commands(self) -> None:
+        """Set bot commands for the menu button."""
+        commands = [
+            BotCommand("start", "Start the bot"),
+            BotCommand("help", "Show help information"),
+            BotCommand("summary", "Show your summary"),
+            BotCommand("reminders", "Show your reminders"),
+            BotCommand("tasks", "Show your tasks"),
+            BotCommand("meetings", "Show your meetings"),
+            BotCommand("settings", "Change your settings"),
+        ]
+        await self.application.bot.set_my_commands(commands)
+        logger.info("Bot commands registered")
+
     async def initialize(self) -> None:
         """Initialize the bot and all components."""
         logger.info("Initializing Telegram bot...")
@@ -147,6 +161,10 @@ class TelegramBot:
 
         # Build application
         self.application = self._build_application()
+
+        # Initialize application and set commands
+        await self.application.initialize()
+        await self._set_bot_commands()
 
         logger.info("Telegram bot initialized")
 
@@ -167,7 +185,6 @@ class TelegramBot:
             await self.initialize()
 
         logger.info("Starting bot in polling mode...")
-        await self.application.initialize()
         await self.application.start()
         await self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
 
