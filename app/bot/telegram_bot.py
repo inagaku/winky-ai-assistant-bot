@@ -140,6 +140,10 @@ class TelegramBot:
 
     async def _set_bot_commands(self) -> None:
         """Set bot commands for the menu button."""
+        # Clear any existing commands first
+        await self.application.bot.delete_my_commands()
+        logger.info("Cleared existing bot commands")
+
         commands = [
             BotCommand("start", "Start the bot"),
             BotCommand("help", "Show help information"),
@@ -150,7 +154,7 @@ class TelegramBot:
             BotCommand("settings", "Change your settings"),
         ]
         await self.application.bot.set_my_commands(commands)
-        logger.info("Bot commands registered")
+        logger.info(f"Bot commands registered: {[c.command for c in commands]}")
 
     async def initialize(self) -> None:
         """Initialize the bot and all components."""

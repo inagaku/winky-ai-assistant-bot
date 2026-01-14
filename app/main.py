@@ -85,7 +85,6 @@ class Application:
 
         # Run bot
         logger.info("Starting bot polling...")
-        await self.bot.application.initialize()
         await self.bot.application.start()
         await self.bot.application.updater.start_polling()
 
