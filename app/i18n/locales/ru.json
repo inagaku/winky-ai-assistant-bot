@@ -56,7 +56,7 @@
   "action_show_summary": "показать сводку",
   "action_help": "показать справку",
 
-  "reminder_created": "Понял! Напомню тебе о \"{title}\" в {time}.",
+  "reminder_created": "Понял! Напомню тебе о \"{title}\" {time}.",
   "reminder_action_info": "Запланировано на {time} ({time_until})",
   "reminder_not_found": "Напоминание не найдено.",
   "reminder_deleted": "Напоминание удалено.",

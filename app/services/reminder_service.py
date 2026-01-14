@@ -106,12 +106,10 @@ class ReminderService(BaseService):
         active_only: bool = True,
         limit: int = 50,
     ) -> List[Reminder]:
-        """Get reminders for a user."""
-        if active_only:
-            return await self.reminder_repository.get_by_user(
-                user_id, status=ReminderStatus.PENDING, limit=limit
-            )
-        return await self.reminder_repository.get_by_user(user_id, limit=limit)
+        """Get reminders for a user (active = pending + snoozed)."""
+        return await self.reminder_repository.get_by_user(
+            user_id, active_only=active_only, limit=limit
+        )
 
     async def get_due_reminders(self) -> List[Reminder]:
         """Get all reminders that are due."""

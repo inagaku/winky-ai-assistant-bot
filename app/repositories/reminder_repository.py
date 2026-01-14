@@ -106,10 +106,20 @@ class ReminderRepository(BaseRepository[Reminder]):
         self,
         user_id: UUID,
         status: Optional[ReminderStatus] = None,
+        active_only: bool = False,
         limit: int = 50,
     ) -> List[Reminder]:
         """Get reminders for a user, optionally filtered by status."""
-        if status:
+        if active_only:
+            # Active means pending or snoozed
+            query = """
+                SELECT * FROM reminders
+                WHERE user_id = $1 AND status IN ('pending', 'snoozed')
+                ORDER BY remind_at ASC
+                LIMIT $2
+            """
+            rows = await self.db.fetch(query, user_id, limit)
+        elif status:
             query = """
                 SELECT * FROM reminders
                 WHERE user_id = $1 AND status = $2
