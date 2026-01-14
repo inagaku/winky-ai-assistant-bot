@@ -10,6 +10,7 @@ from app.services import UserService, AssistantService, ReminderService, TaskSer
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
 from app.i18n import t
+from app.utils import format_time
 from .message_handler import PENDING_ACTIONS_KEY
 from .command_handler import ONBOARDING_STATE_KEY
 
@@ -160,7 +161,8 @@ class CallbackHandler:
                     await query.delete_message()
                 except Exception as e:
                     logger.warning(f"Could not delete message: {e}")
-                    new_time = reminder.remind_at.strftime("%H:%M")
+                    timezone = user.preferences.timezone
+                    new_time = format_time(reminder.remind_at, timezone=timezone)
                     await query.edit_message_text(f"😴 {t('reminder_snoozed', locale=locale, time=new_time)}")
             else:
                 await query.edit_message_text(t("reminder_not_found", locale=locale))

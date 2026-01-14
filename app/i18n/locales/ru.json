@@ -71,6 +71,8 @@
   "task_deleted": "Задача удалена.",
   "task_not_found": "Задача не найдена.",
   "overdue": "ПРОСРОЧЕНО",
+  "due": "срок",
+  "with": "с",
 
   "meeting_scheduled": "Встреча запланирована: \"{title}\" в {time}",
   "meeting_scheduled_with_participants": "Встреча запланирована: \"{title}\" с {participants} в {time}",

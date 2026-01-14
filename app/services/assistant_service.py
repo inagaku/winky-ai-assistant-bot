@@ -14,6 +14,7 @@ from app.models import (
 )
 from app.repositories import UserRepository
 from app.i18n import t
+from app.utils import format_datetime, format_date, format_short_datetime
 
 from .user_service import UserService
 from .reminder_service import ReminderService
@@ -116,12 +117,13 @@ class AssistantService(BaseService):
     ) -> ActionResult:
         """Handle creating a reminder."""
         locale = user.preferences.language
+        timezone = user.preferences.timezone
         reminder = await self.reminder_service.create_from_params(
             user_id=user.id,
             params=action.parameters,
-            user_timezone=user.preferences.timezone,
+            user_timezone=timezone,
         )
-        time_str = reminder.remind_at.strftime("%Y-%m-%d %H:%M")
+        time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
 
         # Build a helpful message showing when they'll be notified
         message = t("reminder_created", locale=locale, title=reminder.title, time=time_str)
@@ -141,8 +143,9 @@ class AssistantService(BaseService):
     ) -> ActionResult:
         """Handle listing reminders."""
         locale = user.preferences.language
+        timezone = user.preferences.timezone
         reminders = await self.reminder_service.get_user_reminders(user.id)
-        message = self.reminder_service.format_reminder_list(reminders, locale=locale)
+        message = self.reminder_service.format_reminder_list(reminders, locale=locale, timezone=timezone)
         return ActionResult(
             success=True,
             message=message,
@@ -176,13 +179,14 @@ class AssistantService(BaseService):
     ) -> ActionResult:
         """Handle creating a task."""
         locale = user.preferences.language
+        timezone = user.preferences.timezone
         task = await self.task_service.create_from_params(
             user_id=user.id,
             params=action.parameters,
-            user_timezone=user.preferences.timezone,
+            user_timezone=timezone,
         )
         if task.due_date:
-            due_str = task.due_date.strftime('%Y-%m-%d')
+            due_str = format_date(task.due_date, locale=locale, timezone=timezone)
             message = t("task_created_with_due", locale=locale, title=task.title, due_date=due_str)
         else:
             message = t("task_created", locale=locale, title=task.title)
@@ -197,8 +201,9 @@ class AssistantService(BaseService):
     ) -> ActionResult:
         """Handle listing tasks."""
         locale = user.preferences.language
+        timezone = user.preferences.timezone
         tasks = await self.task_service.get_user_tasks(user.id)
-        message = self.task_service.format_task_list(tasks, locale=locale)
+        message = self.task_service.format_task_list(tasks, locale=locale, timezone=timezone)
         return ActionResult(
             success=True,
             message=message,
@@ -256,12 +261,13 @@ class AssistantService(BaseService):
     ) -> ActionResult:
         """Handle scheduling a meeting."""
         locale = user.preferences.language
+        timezone = user.preferences.timezone
         meeting = await self.meeting_service.create_from_params(
             user_id=user.id,
             params=action.parameters,
-            user_timezone=user.preferences.timezone,
+            user_timezone=timezone,
         )
-        time_str = meeting.start_time.strftime("%Y-%m-%d %H:%M")
+        time_str = format_datetime(meeting.start_time, locale=locale, timezone=timezone)
         if meeting.participants:
             participants_str = ', '.join(meeting.participants)
             message = t("meeting_scheduled_with_participants", locale=locale,
@@ -279,8 +285,9 @@ class AssistantService(BaseService):
     ) -> ActionResult:
         """Handle listing meetings."""
         locale = user.preferences.language
+        timezone = user.preferences.timezone
         meetings = await self.meeting_service.get_user_meetings(user.id)
-        message = self.meeting_service.format_meeting_list(meetings, locale=locale)
+        message = self.meeting_service.format_meeting_list(meetings, locale=locale, timezone=timezone)
         return ActionResult(
             success=True,
             message=message,
@@ -317,6 +324,7 @@ class AssistantService(BaseService):
     ) -> ActionResult:
         """Handle showing a summary of all items."""
         locale = user.preferences.language
+        timezone = user.preferences.timezone
         reminders = await self.reminder_service.get_user_reminders(user.id, limit=5)
         tasks = await self.task_service.get_user_tasks(user.id, limit=5)
         meetings = await self.meeting_service.get_upcoming_meetings(user.id)
@@ -328,7 +336,7 @@ class AssistantService(BaseService):
         lines.append(f"🔔 {t('summary_reminders', locale=locale, count=reminder_count)}")
         if reminders:
             for r in reminders[:3]:
-                time_str = r.remind_at.strftime("%m/%d %H:%M")
+                time_str = format_short_datetime(r.remind_at, locale=locale, timezone=timezone)
                 lines.append(f"  • {r.title} - {time_str}")
         else:
             lines.append(f"  {t('no_active_reminders', locale=locale)}")
@@ -355,7 +363,7 @@ class AssistantService(BaseService):
         lines.append(f"📅 {t('summary_meetings', locale=locale, count=meeting_count)}")
         if meetings:
             for m in meetings[:3]:
-                time_str = m.start_time.strftime("%m/%d %H:%M")
+                time_str = format_short_datetime(m.start_time, locale=locale, timezone=timezone)
                 lines.append(f"  • {m.title} - {time_str}")
         else:
             lines.append(f"  {t('no_upcoming_meetings', locale=locale)}")

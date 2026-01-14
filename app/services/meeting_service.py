@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.models import Meeting, MeetingStatus
 from app.repositories import MeetingRepository
-from app.utils import DateTimeParser, utc_now
+from app.utils import DateTimeParser, utc_now, format_datetime
 from app.i18n import t
 
 from .base_service import BaseService
@@ -225,18 +225,21 @@ class MeetingService(BaseService):
         """Get count of scheduled meetings for a user."""
         return await self.meeting_repository.get_active_count(user_id)
 
-    def format_meeting_list(self, meetings: List[Meeting], locale: str = "en") -> str:
+    def format_meeting_list(
+        self, meetings: List[Meeting], locale: str = "en", timezone: str = "UTC"
+    ) -> str:
         """Format a list of meetings for display."""
         if not meetings:
             return t("no_meetings", locale=locale)
 
         lines = [t("your_meetings", locale=locale)]
+        with_label = t("with", locale=locale) if locale == "ru" else "with"
         for i, meeting in enumerate(meetings, 1):
-            time_str = meeting.start_time.strftime("%Y-%m-%d %H:%M")
+            time_str = format_datetime(meeting.start_time, locale=locale, timezone=timezone)
             duration = meeting.duration_minutes
             participants_str = ""
             if meeting.participants:
-                participants_str = f" with {', '.join(meeting.participants)}"
+                participants_str = f" {with_label} {', '.join(meeting.participants)}"
             lines.append(f"{i}. 📅 {meeting.title}{participants_str} - {time_str} ({duration}min)")
 
         return "\n".join(lines)

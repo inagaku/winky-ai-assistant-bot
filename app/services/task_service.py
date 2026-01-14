@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.models import Task, TaskStatus, TaskPriority
 from app.repositories import TaskRepository
-from app.utils import DateTimeParser, utc_now
+from app.utils import DateTimeParser, utc_now, format_date
 from app.i18n import t
 
 from .base_service import BaseService
@@ -172,7 +172,9 @@ class TaskService(BaseService):
         """Get tasks with a specific tag."""
         return await self.task_repository.get_by_tag(user_id, tag, limit)
 
-    def format_task_list(self, tasks: List[Task], locale: str = "en") -> str:
+    def format_task_list(
+        self, tasks: List[Task], locale: str = "en", timezone: str = "UTC"
+    ) -> str:
         """Format a list of tasks for display."""
         if not tasks:
             return t("no_tasks", locale=locale)
@@ -185,11 +187,12 @@ class TaskService(BaseService):
             TaskPriority.URGENT: "🔴",
         }
 
+        due_label = t("due", locale=locale) if locale == "ru" else "due"
         for i, task in enumerate(tasks, 1):
             emoji = priority_emoji.get(task.priority, "⚪")
             due_str = ""
             if task.due_date:
-                due_str = f" (due: {task.due_date.strftime('%Y-%m-%d')})"
+                due_str = f" ({due_label}: {format_date(task.due_date, locale=locale, timezone=timezone)})"
             overdue = f" ⚠️ {t('overdue', locale=locale)}" if task.is_overdue else ""
             lines.append(f"{i}. {emoji} {task.title}{due_str}{overdue}")
 

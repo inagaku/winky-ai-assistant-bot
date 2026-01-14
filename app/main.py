@@ -125,12 +125,12 @@ def main():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    def signal_handler():
+    def shutdown_handler():
         logger.info("Received shutdown signal")
         app.request_shutdown()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, signal_handler)
+        loop.add_signal_handler(sig, shutdown_handler)
 
     try:
         loop.run_until_complete(app.run())

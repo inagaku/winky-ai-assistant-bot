@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.models import Reminder, ReminderStatus
 from app.repositories import ReminderRepository
-from app.utils import DateTimeParser, ReminderTimeCalculator, utc_now
+from app.utils import DateTimeParser, ReminderTimeCalculator, utc_now, format_datetime
 from app.i18n import t
 
 from .base_service import BaseService
@@ -142,7 +142,9 @@ class ReminderService(BaseService):
         """Get count of active reminders for a user."""
         return await self.reminder_repository.get_active_count(user_id)
 
-    def format_reminder_list(self, reminders: List[Reminder], locale: str = "en") -> str:
+    def format_reminder_list(
+        self, reminders: List[Reminder], locale: str = "en", timezone: str = "UTC"
+    ) -> str:
         """Format a list of reminders for display."""
         if not reminders:
             return t("no_reminders", locale=locale)
@@ -150,7 +152,7 @@ class ReminderService(BaseService):
         lines = [t("your_reminders", locale=locale)]
         for i, reminder in enumerate(reminders, 1):
             status_emoji = "🔔" if reminder.status == ReminderStatus.PENDING else "😴"
-            time_str = reminder.remind_at.strftime("%Y-%m-%d %H:%M")
+            time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
             lines.append(f"{i}. {status_emoji} {reminder.title} - {time_str}")
 
         return "\n".join(lines)
