@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.models import Task, TaskStatus, TaskPriority
 from app.repositories import TaskRepository
+from app.utils import DateTimeParser, utc_now
 
 from .base_service import BaseService
 
@@ -16,15 +17,16 @@ logger = logging.getLogger(__name__)
 class TaskService(BaseService):
     """Service for task management operations."""
 
-    def __init__(self, task_repository: TaskRepository):
+    def __init__(self, task_repository: TaskRepository, openai_api_key: str):
         super().__init__()
         self.task_repository = task_repository
+        self.datetime_parser = DateTimeParser(openai_api_key)
 
     async def create_task(
         self,
         user_id: UUID,
         title: str,
-        description: Optional[str] = None,
+        description: str,
         due_date: Optional[datetime] = None,
         priority: TaskPriority = TaskPriority.MEDIUM,
         tags: Optional[List[str]] = None,
@@ -46,15 +48,25 @@ class TaskService(BaseService):
         self,
         user_id: UUID,
         params: Dict[str, Any],
+        user_timezone: str = "UTC",
     ) -> Task:
         """Create a task from extracted parameters."""
-        title = params.get("task_name") or params.get("task") or params.get("title", "Task")
+        title = params.get("title") or params.get("name", "Task")
         due_date_str = params.get("datetime") or params.get("due_date") or params.get("when")
 
-        # Parse due date
+        # Parse due date using intelligent datetime parser with user's timezone
         due_date = None
-        if due_date_str:
-            due_date = self._parse_datetime(due_date_str)
+        if isinstance(due_date_str, datetime):
+            due_date = due_date_str
+        elif due_date_str:
+            due_date, confidence, interpretation = await self.datetime_parser.parse(
+                due_date_str,
+                timezone=user_timezone,
+                context_type="task",
+            )
+            self.logger.info(
+                f"Parsed '{due_date_str}' -> {due_date} UTC (timezone: {user_timezone}, confidence: {confidence}, interpretation: {interpretation})"
+            )
 
         # Parse priority
         priority_str = params.get("priority", "medium").lower()
@@ -79,28 +91,6 @@ class TaskService(BaseService):
             priority=priority,
             tags=tags,
         )
-
-    def _parse_datetime(self, dt_str: str) -> datetime:
-        """Parse datetime string. Simple implementation."""
-        now = datetime.utcnow()
-
-        if isinstance(dt_str, datetime):
-            return dt_str
-
-        dt_lower = dt_str.lower()
-        if "tomorrow" in dt_lower:
-            base = now + timedelta(days=1)
-        elif "today" in dt_lower:
-            base = now
-        elif "next week" in dt_lower:
-            base = now + timedelta(weeks=1)
-        else:
-            try:
-                return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-            except ValueError:
-                return now + timedelta(days=1)
-
-        return base.replace(hour=18, minute=0, second=0, microsecond=0)
 
     async def get_task(self, task_id: UUID) -> Optional[Task]:
         """Get a task by ID."""
@@ -164,7 +154,7 @@ class TaskService(BaseService):
         if status is not None:
             task.status = status
             if status == TaskStatus.COMPLETED:
-                task.completed_at = datetime.utcnow()
+                task.completed_at = utc_now()
 
         return await self.task_repository.update(task)
 

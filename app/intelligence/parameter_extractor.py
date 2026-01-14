@@ -14,35 +14,35 @@ logger = logging.getLogger(__name__)
 # Required parameters for each action type
 ACTION_PARAMETERS: Dict[ActionType, Dict[str, Any]] = {
     ActionType.CREATE_REMINDER: {
-        "required": ["task"],
-        "optional": ["datetime", "description"],
+        "required": ["title", "description"],
+        "optional": ["datetime"],
         "schema": {
-            "task": "What to be reminded about (string)",
+            "title": "Short description of the reminder (string, required)",
+            "description": "Full info about the action to be done (string, required)",
             "datetime": "When to remind (ISO format or natural language like 'tomorrow at 3pm')",
-            "description": "Additional details (string, optional)",
         },
     },
     ActionType.CREATE_TASK: {
-        "required": ["task_name"],
-        "optional": ["datetime", "priority", "tags", "description"],
+        "required": ["title", "description"],
+        "optional": ["datetime", "priority", "tags"],
         "schema": {
-            "task_name": "Name/title of the task (string)",
+            "title": "Short description of the task (string, required)",
+            "description": "Full info about the task to be done (string, required)",
             "datetime": "Due date (ISO format or natural language)",
             "priority": "Priority level: low, medium, high, urgent",
             "tags": "Comma-separated tags",
-            "description": "Additional details (string, optional)",
         },
     },
     ActionType.SCHEDULE_MEETING: {
-        "required": ["title"],
-        "optional": ["datetime_start", "datetime_end", "participants", "location", "description"],
+        "required": ["title", "description"],
+        "optional": ["datetime_start", "datetime_end", "participants", "location"],
         "schema": {
-            "title": "Meeting title/subject (string)",
+            "title": "Short description of the meeting (string, required)",
+            "description": "Full info about the meeting to be scheduled (string, required)",
             "datetime_start": "Start time (ISO format or natural language)",
             "datetime_end": "End time (ISO format or natural language)",
             "participants": "Comma-separated list of attendees",
             "location": "Meeting location or 'online'",
-            "description": "Meeting agenda or notes",
         },
     },
     ActionType.DELETE_REMINDER: {

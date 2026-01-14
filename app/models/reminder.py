@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
+from app.utils import utc_now
+
 
 class ReminderStatus(str, Enum):
     """Status of a reminder."""
@@ -28,8 +30,8 @@ class Reminder(BaseModel):
     repeat_rule: Optional[str] = None  # RRULE format for recurring reminders
     status: ReminderStatus = ReminderStatus.PENDING
     snooze_count: int = 0
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     @property
     def is_active(self) -> bool:
@@ -39,4 +41,4 @@ class Reminder(BaseModel):
     @property
     def is_due(self) -> bool:
         """Check if reminder is due."""
-        return self.is_active and datetime.utcnow() >= self.remind_at
+        return self.is_active and utc_now() >= self.remind_at

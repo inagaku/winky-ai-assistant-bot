@@ -6,8 +6,12 @@ from telegram.ext import ContextTypes
 
 from app.services import UserService, AssistantService
 from app.models import ActionType, ActionIntent, ActionStatus, ParsedAction
+from app.bot.keyboards import InlineKeyboards
 
 logger = logging.getLogger(__name__)
+
+# Key for storing onboarding state
+ONBOARDING_STATE_KEY = "onboarding_state"
 
 
 class CommandHandler:
@@ -20,6 +24,7 @@ class CommandHandler:
     ):
         self.user_service = user_service
         self.assistant_service = assistant_service
+        self.keyboards = InlineKeyboards()
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
@@ -27,25 +32,51 @@ class CommandHandler:
             return
 
         telegram_user = update.effective_user
+
+        # Check if user already exists
+        existing_user = await self.user_service.get_user_by_telegram_id(telegram_user.id)
+        is_new_user = existing_user is None
+
         user = await self.user_service.get_or_create_user(
             telegram_id=telegram_user.id,
             username=telegram_user.username,
             first_name=telegram_user.first_name,
             last_name=telegram_user.last_name,
+            language_code=telegram_user.language_code,
         )
 
-        welcome_message = f"""Hi {user.display_name}! I'm your personal assistant.
+        if is_new_user:
+            # New user - start onboarding with timezone selection
+            welcome_message = f"""Hi {user.display_name}! Welcome to your personal assistant.
+
+I can help you manage reminders, tasks, and meetings - just tell me what you need in natural language.
+
+To get started, please select your timezone so I can schedule reminders at the right time for you:"""
+
+            # Store onboarding state
+            context.user_data[ONBOARDING_STATE_KEY] = {
+                "step": "timezone",
+                "user_id": str(user.id),
+            }
+
+            await update.message.reply_text(
+                welcome_message,
+                reply_markup=self.keyboards.create_timezone_region_keyboard(),
+            )
+        else:
+            # Existing user - show standard welcome
+            welcome_message = f"""Welcome back, {user.display_name}!
 
 I can help you manage:
 - Reminders ("Remind me to...")
 - Tasks ("Create a task to...")
 - Meetings ("Schedule a meeting with...")
 
-Just tell me what you need in natural language, or use /help to see all commands.
+Your timezone: {user.preferences.timezone}
 
-Let's get started! What would you like to do?"""
+Use /settings to change your preferences, or /help to see all commands."""
 
-        await update.message.reply_text(welcome_message)
+            await update.message.reply_text(welcome_message)
 
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command."""
@@ -198,3 +229,26 @@ Let's get started! What would you like to do?"""
 
         result = await self.assistant_service.execute_action(action, user)
         await update.message.reply_text(result.message)
+
+    async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /settings command."""
+        if not update.effective_user or not update.effective_chat:
+            return
+
+        telegram_user = update.effective_user
+        user = await self.user_service.get_or_create_user(
+            telegram_id=telegram_user.id,
+            username=telegram_user.username,
+            first_name=telegram_user.first_name,
+            last_name=telegram_user.last_name,
+            language_code=telegram_user.language_code,
+        )
+
+        settings_message = f"""Settings for {user.display_name}
+
+Tap an option to change it:"""
+
+        await update.message.reply_text(
+            settings_message,
+            reply_markup=self.keyboards.create_settings_keyboard(user.preferences.timezone),
+        )

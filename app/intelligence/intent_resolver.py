@@ -82,7 +82,17 @@ class IntentResolver:
         # Step 2: Extract parameters
         parameters = await self.parameter_extractor.extract(user_input, intent.action_type)
 
-        # Step 3: Check if clarification is needed (unless skipped)
+        # Step 3: Create the action (we'll need it whether we clarify or not)
+        action = ParsedAction(
+            intent=intent,
+            parameters=parameters,
+            user_id=user_id,
+            chat_id=chat_id,
+            message_id=message_id,
+            status=ActionStatus.PENDING,
+        )
+
+        # Step 4: Check if clarification is needed (unless skipped)
         if not skip_clarification:
             # Get alternatives for potential clarification
             alternatives = await self.semantic_matcher.match_with_alternatives(user_input, top_n=3)
@@ -92,17 +102,9 @@ class IntentResolver:
             )
 
             if clarification is not None:
+                # Attach the original action so it can be used when user confirms
+                clarification.original_action = action
                 return clarification
-
-        # Step 4: Create and return ParsedAction
-        action = ParsedAction(
-            intent=intent,
-            parameters=parameters,
-            user_id=user_id,
-            chat_id=chat_id,
-            message_id=message_id,
-            status=ActionStatus.PENDING,
-        )
 
         logger.info(
             f"Resolved action: {action.action_type} with confidence {action.confidence:.2f}"

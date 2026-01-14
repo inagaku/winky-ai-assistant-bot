@@ -3,6 +3,7 @@
 import logging
 import os
 import tempfile
+import uuid
 from typing import Optional
 
 from telegram import Update
@@ -14,6 +15,9 @@ from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
 
 logger = logging.getLogger(__name__)
+
+# Key for storing pending actions in user_data
+PENDING_ACTIONS_KEY = "pending_actions"
 
 
 class AudioProcessor:
@@ -73,6 +77,7 @@ class MessageHandler:
             username=telegram_user.username,
             first_name=telegram_user.first_name,
             last_name=telegram_user.last_name,
+            language_code=telegram_user.language_code,
         )
 
         # Resolve intent
@@ -85,7 +90,7 @@ class MessageHandler:
 
         # Handle result
         if isinstance(result, ClarificationRequest):
-            await self._send_clarification(update, result)
+            await self._send_clarification(update, context, result)
         elif isinstance(result, ParsedAction):
             await self._execute_action(update, result, user)
         else:
@@ -139,6 +144,7 @@ class MessageHandler:
                 username=telegram_user.username,
                 first_name=telegram_user.first_name,
                 last_name=telegram_user.last_name,
+                language_code=telegram_user.language_code,
             )
 
             result = await self.intent_resolver.resolve(
@@ -149,7 +155,7 @@ class MessageHandler:
             )
 
             if isinstance(result, ClarificationRequest):
-                await self._send_clarification(update, result)
+                await self._send_clarification(update, context, result)
             elif isinstance(result, ParsedAction):
                 await self._execute_action(update, result, user)
 
@@ -162,12 +168,30 @@ class MessageHandler:
     async def _send_clarification(
         self,
         update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
         clarification: ClarificationRequest,
     ) -> None:
         """Send a clarification request to the user."""
+        # Generate unique ID for this pending action
+        action_id = str(uuid.uuid4())[:8]
+
+        # Store the pending action in user_data
+        if PENDING_ACTIONS_KEY not in context.user_data:
+            context.user_data[PENDING_ACTIONS_KEY] = {}
+
+        context.user_data[PENDING_ACTIONS_KEY][action_id] = {
+            "original_action": clarification.original_action,
+            "clarification_type": clarification.type.value if clarification.type else None,
+            "parameter": clarification.parameter,
+        }
+
+        # Create keyboard with action_id encoded in callback data
         keyboard = None
         if clarification.options:
-            keyboard = self.keyboards.create_options_keyboard(clarification.options)
+            keyboard = self.keyboards.create_clarification_keyboard(
+                options=clarification.options,
+                action_id=action_id,
+            )
 
         await update.message.reply_text(
             clarification.message,

@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.database import Database
 from app.models import Meeting, MeetingStatus
+from app.utils import utc_now
 
 from .base_repository import BaseRepository
 
@@ -89,7 +90,7 @@ class MeetingRepository(BaseRepository[Meeting]):
 
     async def update(self, meeting: Meeting) -> Meeting:
         """Update an existing meeting."""
-        meeting.updated_at = datetime.utcnow()
+        meeting.updated_at = utc_now()
         query = """
             UPDATE meetings
             SET title = $2, description = $3, participants = $4, start_time = $5,
@@ -147,7 +148,7 @@ class MeetingRepository(BaseRepository[Meeting]):
         limit: int = 10,
     ) -> List[Meeting]:
         """Get upcoming meetings within a time window."""
-        now = datetime.utcnow()
+        now = utc_now()
         end_time = now + timedelta(hours=within_hours)
         query = """
             SELECT * FROM meetings
@@ -162,7 +163,7 @@ class MeetingRepository(BaseRepository[Meeting]):
 
     async def get_meetings_needing_reminder(self) -> List[Meeting]:
         """Get meetings that need reminder notifications sent."""
-        now = datetime.utcnow()
+        now = utc_now()
         query = """
             SELECT * FROM meetings
             WHERE status = 'scheduled'
@@ -175,7 +176,7 @@ class MeetingRepository(BaseRepository[Meeting]):
 
     async def get_today_meetings(self, user_id: UUID) -> List[Meeting]:
         """Get all meetings for today."""
-        now = datetime.utcnow()
+        now = utc_now()
         start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end_of_day = start_of_day + timedelta(days=1)
         query = """
@@ -196,7 +197,7 @@ class MeetingRepository(BaseRepository[Meeting]):
             WHERE id = $1
             RETURNING *
         """
-        row = await self.db.fetchrow(query, meeting_id, datetime.utcnow())
+        row = await self.db.fetchrow(query, meeting_id, utc_now())
         if row:
             return self._row_to_model(row)
         return None
@@ -209,7 +210,7 @@ class MeetingRepository(BaseRepository[Meeting]):
             WHERE id = $1
             RETURNING *
         """
-        row = await self.db.fetchrow(query, meeting_id, datetime.utcnow())
+        row = await self.db.fetchrow(query, meeting_id, utc_now())
         if row:
             return self._row_to_model(row)
         return None

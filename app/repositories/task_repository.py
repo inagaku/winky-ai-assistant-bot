@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.database import Database
 from app.models import Task, TaskStatus, TaskPriority
+from app.utils import utc_now
 
 from .base_repository import BaseRepository
 
@@ -82,7 +83,7 @@ class TaskRepository(BaseRepository[Task]):
 
     async def update(self, task: Task) -> Task:
         """Update an existing task."""
-        task.updated_at = datetime.utcnow()
+        task.updated_at = utc_now()
         query = """
             UPDATE tasks
             SET title = $2, description = $3, due_date = $4, priority = $5,
@@ -174,12 +175,12 @@ class TaskRepository(BaseRepository[Task]):
                 AND due_date < $2
             ORDER BY due_date ASC
         """
-        rows = await self.db.fetch(query, user_id, datetime.utcnow())
+        rows = await self.db.fetch(query, user_id, utc_now())
         return [self._row_to_model(row) for row in rows]
 
     async def complete(self, task_id: UUID) -> Optional[Task]:
         """Mark a task as completed."""
-        now = datetime.utcnow()
+        now = utc_now()
         query = """
             UPDATE tasks
             SET status = 'completed', completed_at = $2, updated_at = $2
@@ -199,7 +200,7 @@ class TaskRepository(BaseRepository[Task]):
             WHERE id = $1
             RETURNING *
         """
-        row = await self.db.fetchrow(query, task_id, datetime.utcnow())
+        row = await self.db.fetchrow(query, task_id, utc_now())
         if row:
             return self._row_to_model(row)
         return None

@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.database import Database
 from app.models import Reminder, ReminderStatus
+from app.utils import utc_now
 
 from .base_repository import BaseRepository
 
@@ -79,7 +80,7 @@ class ReminderRepository(BaseRepository[Reminder]):
 
     async def update(self, reminder: Reminder) -> Reminder:
         """Update an existing reminder."""
-        reminder.updated_at = datetime.utcnow()
+        reminder.updated_at = utc_now()
         query = """
             UPDATE reminders
             SET title = $2, description = $3, remind_at = $4, repeat_rule = $5,
@@ -127,10 +128,10 @@ class ReminderRepository(BaseRepository[Reminder]):
         return [self._row_to_model(row) for row in rows]
 
     async def get_due_reminders(self, before: datetime) -> List[Reminder]:
-        """Get all pending reminders due before the given time."""
+        """Get all active reminders due before the given time (pending or snoozed)."""
         query = """
             SELECT * FROM reminders
-            WHERE status = 'pending' AND remind_at <= $1
+            WHERE status IN ('pending', 'snoozed') AND remind_at <= $1
             ORDER BY remind_at ASC
         """
         rows = await self.db.fetch(query, before)
@@ -144,7 +145,7 @@ class ReminderRepository(BaseRepository[Reminder]):
             WHERE id = $1
             RETURNING *
         """
-        row = await self.db.fetchrow(query, reminder_id, datetime.utcnow())
+        row = await self.db.fetchrow(query, reminder_id, utc_now())
         if row:
             return self._row_to_model(row)
         return None
@@ -157,7 +158,7 @@ class ReminderRepository(BaseRepository[Reminder]):
             WHERE id = $1
             RETURNING *
         """
-        row = await self.db.fetchrow(query, reminder_id, new_time, datetime.utcnow())
+        row = await self.db.fetchrow(query, reminder_id, new_time, utc_now())
         if row:
             return self._row_to_model(row)
         return None
@@ -170,7 +171,7 @@ class ReminderRepository(BaseRepository[Reminder]):
             WHERE id = $1
             RETURNING *
         """
-        row = await self.db.fetchrow(query, reminder_id, datetime.utcnow())
+        row = await self.db.fetchrow(query, reminder_id, utc_now())
         if row:
             return self._row_to_model(row)
         return None

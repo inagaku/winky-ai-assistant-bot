@@ -12,33 +12,33 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # Telegram
-    telegram_bot_token: str = Field(..., env="TELEGRAM_BOT_TOKEN")
+    telegram_bot_token: str = Field(..., alias="TELEGRAM_BOT_TOKEN")
 
     # OpenAI
-    openai_api_key: str = Field(..., env="OPENAI_API_KEY")
+    openai_api_key: str = Field(..., alias="OPENAI_API_KEY")
 
     # Database
-    database_host: str = Field(default="localhost", env="DATABASE_HOST")
-    database_port: int = Field(default=5432, env="DATABASE_PORT")
-    database_name: str = Field(default="winky_bot", env="DATABASE_NAME")
-    database_user: str = Field(default="postgres", env="DATABASE_USER")
-    database_password: str = Field(default="", env="DATABASE_PASSWORD")
+    database_host: str = Field(..., alias="WINKY_DATABASE_HOST")
+    database_port: int = Field(..., alias="WINKY_DATABASE_PORT")
+    database_name: str = Field(..., alias="WINKY_DATABASE_NAME")
+    database_user: str = Field(..., alias="WINKY_DATABASE_USER")
+    database_password: str = Field(..., alias="WINKY_DATABASE_PASSWORD")
 
     # Application
-    log_level: str = Field(default="INFO", env="LOG_LEVEL")
-    environment: str = Field(default="development", env="ENVIRONMENT")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    environment: str = Field(default="development", alias="ENVIRONMENT")
 
     # Scheduler
     scheduler_check_interval: int = Field(
         default=60,
-        env="SCHEDULER_CHECK_INTERVAL",
+        alias="SCHEDULER_CHECK_INTERVAL",
         description="How often to check for due notifications (seconds)",
     )
 
     # NLP
     confidence_threshold: float = Field(
         default=0.75,
-        env="CONFIDENCE_THRESHOLD",
+        alias="CONFIDENCE_THRESHOLD",
         description="Minimum confidence to execute action without clarification",
     )
 

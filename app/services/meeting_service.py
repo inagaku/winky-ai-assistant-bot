@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.models import Meeting, MeetingStatus
 from app.repositories import MeetingRepository
+from app.utils import DateTimeParser, utc_now
 
 from .base_service import BaseService
 
@@ -16,9 +17,10 @@ logger = logging.getLogger(__name__)
 class MeetingService(BaseService):
     """Service for meeting management operations."""
 
-    def __init__(self, meeting_repository: MeetingRepository):
+    def __init__(self, meeting_repository: MeetingRepository, openai_api_key: str):
         super().__init__()
         self.meeting_repository = meeting_repository
+        self.datetime_parser = DateTimeParser(openai_api_key)
 
     async def schedule_meeting(
         self,
@@ -26,8 +28,8 @@ class MeetingService(BaseService):
         title: str,
         start_time: datetime,
         end_time: datetime,
+        description: str,
         participants: Optional[List[str]] = None,
-        description: Optional[str] = None,
         location: Optional[str] = None,
         meeting_link: Optional[str] = None,
         reminder_minutes_before: int = 15,
@@ -52,19 +54,32 @@ class MeetingService(BaseService):
         self,
         user_id: UUID,
         params: Dict[str, Any],
+        user_timezone: str = "UTC",
     ) -> Meeting:
         """Create a meeting from extracted parameters."""
-        title = params.get("title") or params.get("meeting") or params.get("subject", "Meeting")
+        title = params.get("title") or params.get("name") or params.get("subject", "Meeting")
 
-        # Parse start time
+        # Parse start time using intelligent datetime parser with user's timezone
         start_str = params.get("datetime_start") or params.get("start") or params.get("when")
         if isinstance(start_str, datetime):
             start_time = start_str
         elif start_str:
-            start_time = self._parse_datetime(start_str)
+            start_time, confidence, interpretation = await self.datetime_parser.parse(
+                start_str,
+                timezone=user_timezone,
+                context_type="meeting",
+            )
+            if start_time is None:
+                # Default to tomorrow at 10 AM
+                start_time = (utc_now() + timedelta(days=1)).replace(
+                    hour=10, minute=0, second=0, microsecond=0
+                )
+            self.logger.info(
+                f"Parsed start '{start_str}' -> {start_time} UTC (timezone: {user_timezone}, confidence: {confidence}, interpretation: {interpretation})"
+            )
         else:
             # Default to tomorrow at 10 AM
-            start_time = (datetime.utcnow() + timedelta(days=1)).replace(
+            start_time = (utc_now() + timedelta(days=1)).replace(
                 hour=10, minute=0, second=0, microsecond=0
             )
 
@@ -73,10 +88,25 @@ class MeetingService(BaseService):
         if isinstance(end_str, datetime):
             end_time = end_str
         elif end_str:
-            end_time = self._parse_datetime(end_str)
+            end_time, confidence, interpretation = await self.datetime_parser.parse(
+                end_str,
+                timezone=user_timezone,
+                context_type="meeting",
+            )
+            if end_time is None:
+                end_time = start_time + timedelta(hours=1)
+            self.logger.info(
+                f"Parsed end '{end_str}' -> {end_time} UTC (timezone: {user_timezone}, confidence: {confidence}, interpretation: {interpretation})"
+            )
         else:
             # Default to 1 hour after start
             end_time = start_time + timedelta(hours=1)
+
+        # Parse duration if end time not specified but duration is
+        duration_str = params.get("duration")
+        if duration_str and not end_str:
+            duration_hours = self._parse_duration(duration_str)
+            end_time = start_time + timedelta(hours=duration_hours)
 
         # Parse participants
         participants = params.get("participants") or params.get("attendee") or []
@@ -94,39 +124,24 @@ class MeetingService(BaseService):
             meeting_link=params.get("meeting_link"),
         )
 
-    def _parse_datetime(self, dt_str: str) -> datetime:
-        """Parse datetime string. Simple implementation."""
-        now = datetime.utcnow()
+    def _parse_duration(self, duration_str: str) -> float:
+        """Parse duration string to hours."""
+        duration_lower = duration_str.lower()
 
-        if isinstance(dt_str, datetime):
-            return dt_str
+        # Handle "30 minutes", "1 hour", "1.5 hours", etc.
+        import re
 
-        dt_lower = dt_str.lower()
-        if "tomorrow" in dt_lower:
-            base = now + timedelta(days=1)
-        elif "today" in dt_lower:
-            base = now
-        elif "next week" in dt_lower:
-            base = now + timedelta(weeks=1)
-        else:
-            try:
-                return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-            except ValueError:
-                return now + timedelta(days=1)
+        # Match patterns like "30 min", "1 hour", "1.5 hours"
+        hour_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:hour|hr)s?', duration_lower)
+        if hour_match:
+            return float(hour_match.group(1))
 
-        # Try to extract time from string
-        if "2pm" in dt_lower or "2 pm" in dt_lower:
-            return base.replace(hour=14, minute=0, second=0, microsecond=0)
-        elif "3pm" in dt_lower or "3 pm" in dt_lower:
-            return base.replace(hour=15, minute=0, second=0, microsecond=0)
-        elif "morning" in dt_lower:
-            return base.replace(hour=9, minute=0, second=0, microsecond=0)
-        elif "afternoon" in dt_lower:
-            return base.replace(hour=14, minute=0, second=0, microsecond=0)
-        elif "evening" in dt_lower:
-            return base.replace(hour=18, minute=0, second=0, microsecond=0)
+        min_match = re.search(r'(\d+)\s*(?:minute|min)s?', duration_lower)
+        if min_match:
+            return int(min_match.group(1)) / 60
 
-        return base.replace(hour=10, minute=0, second=0, microsecond=0)
+        # Default to 1 hour
+        return 1.0
 
     async def get_meeting(self, meeting_id: UUID) -> Optional[Meeting]:
         """Get a meeting by ID."""

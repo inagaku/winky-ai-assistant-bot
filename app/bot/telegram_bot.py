@@ -54,9 +54,9 @@ class TelegramBot:
 
         # Initialize services
         self.user_service = UserService(self.user_repository)
-        self.reminder_service = ReminderService(self.reminder_repository)
-        self.task_service = TaskService(self.task_repository)
-        self.meeting_service = MeetingService(self.meeting_repository)
+        self.reminder_service = ReminderService(self.reminder_repository, openai_api_key)
+        self.task_service = TaskService(self.task_repository, openai_api_key)
+        self.meeting_service = MeetingService(self.meeting_repository, openai_api_key)
         self.assistant_service = AssistantService(
             user_service=self.user_service,
             reminder_service=self.reminder_service,
@@ -82,6 +82,8 @@ class TelegramBot:
             user_service=self.user_service,
             assistant_service=self.assistant_service,
             intent_resolver=self.intent_resolver,
+            reminder_service=self.reminder_service,
+            task_service=self.task_service,
         )
 
         # Build application
@@ -98,6 +100,7 @@ class TelegramBot:
         application.add_handler(TelegramCommandHandler("reminders", self.command_handler.reminders))
         application.add_handler(TelegramCommandHandler("tasks", self.command_handler.tasks))
         application.add_handler(TelegramCommandHandler("meetings", self.command_handler.meetings))
+        application.add_handler(TelegramCommandHandler("settings", self.command_handler.settings))
 
         # Register message handlers
         application.add_handler(

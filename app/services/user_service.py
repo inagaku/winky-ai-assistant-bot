@@ -25,6 +25,7 @@ class UserService(BaseService):
         username: Optional[str] = None,
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
+        language_code: Optional[str] = None,
     ) -> User:
         """Get existing user or create a new one."""
         user, created = await self.user_repository.get_or_create(
@@ -32,9 +33,10 @@ class UserService(BaseService):
             username=username,
             first_name=first_name,
             last_name=last_name,
+            language_code=language_code,
         )
         if created:
-            self.logger.info(f"New user registered: {telegram_id}")
+            self.logger.info(f"New user registered: {telegram_id} (lang: {language_code})")
         return user
 
     async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:

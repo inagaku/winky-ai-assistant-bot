@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
+from app.utils import utc_now
+
 
 class TaskStatus(str, Enum):
     """Status of a task."""
@@ -51,10 +53,10 @@ class Task(BaseModel):
         """Check if task is overdue."""
         if not self.due_date or not self.is_active:
             return False
-        return datetime.utcnow() > self.due_date
+        return utc_now() > self.due_date
 
     def complete(self) -> None:
         """Mark task as completed."""
         self.status = TaskStatus.COMPLETED
-        self.completed_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
+        self.completed_at = utc_now()
+        self.updated_at = utc_now()

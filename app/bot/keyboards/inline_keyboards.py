@@ -31,6 +31,37 @@ class InlineKeyboards:
 
         return InlineKeyboardMarkup(buttons)
 
+    def create_clarification_keyboard(
+        self,
+        options: List[str],
+        action_id: str,
+        columns: int = 1,
+    ) -> InlineKeyboardMarkup:
+        """Create a keyboard for clarification with action_id for tracking."""
+        buttons = []
+        row = []
+
+        for i, option in enumerate(options):
+            # Format: clarify:{action_id}:{option_index}:{confirm|alt|cancel}
+            if option.lower().startswith("yes"):
+                callback_data = f"clarify:{action_id}:{i}:confirm"
+            elif option.lower() == "something else":
+                callback_data = f"clarify:{action_id}:{i}:cancel"
+            else:
+                callback_data = f"clarify:{action_id}:{i}:alt"
+
+            button = InlineKeyboardButton(text=option, callback_data=callback_data)
+            row.append(button)
+
+            if len(row) >= columns:
+                buttons.append(row)
+                row = []
+
+        if row:
+            buttons.append(row)
+
+        return InlineKeyboardMarkup(buttons)
+
     def create_confirmation_keyboard(
         self,
         confirm_text: str = "Yes",
@@ -60,12 +91,6 @@ class InlineKeyboards:
                 InlineKeyboardButton(
                     text="😴 Snooze 15m",
                     callback_data=f"action:snooze:{reminder_id}",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="❌ Dismiss",
-                    callback_data=f"action:dismiss:{reminder_id}",
                 ),
             ],
         ])
@@ -138,5 +163,97 @@ class InlineKeyboards:
             [
                 InlineKeyboardButton(text="🟠 High", callback_data="option:high"),
                 InlineKeyboardButton(text="🔴 Urgent", callback_data="option:urgent"),
+            ],
+        ])
+
+    def create_timezone_region_keyboard(self) -> InlineKeyboardMarkup:
+        """Create timezone region selection keyboard."""
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(text="🌎 Americas", callback_data="tz_region:americas"),
+                InlineKeyboardButton(text="🌍 Europe", callback_data="tz_region:europe"),
+            ],
+            [
+                InlineKeyboardButton(text="🌏 Asia", callback_data="tz_region:asia"),
+                InlineKeyboardButton(text="🌏 Pacific", callback_data="tz_region:pacific"),
+            ],
+            [
+                InlineKeyboardButton(text="🌍 Africa", callback_data="tz_region:africa"),
+                InlineKeyboardButton(text="🕐 UTC", callback_data="tz:UTC"),
+            ],
+        ])
+
+    def create_timezone_keyboard(self, region: str) -> InlineKeyboardMarkup:
+        """Create timezone selection keyboard for a specific region."""
+        timezones = {
+            "americas": [
+                ("🇺🇸 New York (EST)", "America/New_York"),
+                ("🇺🇸 Chicago (CST)", "America/Chicago"),
+                ("🇺🇸 Denver (MST)", "America/Denver"),
+                ("🇺🇸 Los Angeles (PST)", "America/Los_Angeles"),
+                ("🇧🇷 São Paulo", "America/Sao_Paulo"),
+                ("🇲🇽 Mexico City", "America/Mexico_City"),
+                ("🇦🇷 Buenos Aires", "America/Argentina/Buenos_Aires"),
+            ],
+            "europe": [
+                ("🇬🇧 London (GMT)", "Europe/London"),
+                ("🇫🇷 Paris (CET)", "Europe/Paris"),
+                ("🇩🇪 Berlin (CET)", "Europe/Berlin"),
+                ("🇳🇱 Amsterdam (CET)", "Europe/Amsterdam"),
+                ("🇪🇸 Madrid (CET)", "Europe/Madrid"),
+                ("🇮🇹 Rome (CET)", "Europe/Rome"),
+                ("🇷🇺 Moscow (MSK)", "Europe/Moscow"),
+                ("🇺🇦 Kyiv", "Europe/Kyiv"),
+            ],
+            "asia": [
+                ("🇯🇵 Tokyo (JST)", "Asia/Tokyo"),
+                ("🇨🇳 Shanghai (CST)", "Asia/Shanghai"),
+                ("🇮🇳 Mumbai (IST)", "Asia/Kolkata"),
+                ("🇸🇬 Singapore (SGT)", "Asia/Singapore"),
+                ("🇭🇰 Hong Kong", "Asia/Hong_Kong"),
+                ("🇰🇷 Seoul", "Asia/Seoul"),
+                ("🇦🇪 Dubai", "Asia/Dubai"),
+                ("🇮🇱 Tel Aviv", "Asia/Tel_Aviv"),
+            ],
+            "pacific": [
+                ("🇦🇺 Sydney (AEST)", "Australia/Sydney"),
+                ("🇦🇺 Melbourne", "Australia/Melbourne"),
+                ("🇳🇿 Auckland (NZST)", "Pacific/Auckland"),
+                ("🇦🇺 Perth (AWST)", "Australia/Perth"),
+            ],
+            "africa": [
+                ("🇿🇦 Johannesburg", "Africa/Johannesburg"),
+                ("🇪🇬 Cairo", "Africa/Cairo"),
+                ("🇳🇬 Lagos", "Africa/Lagos"),
+                ("🇰🇪 Nairobi", "Africa/Nairobi"),
+            ],
+        }
+
+        tz_list = timezones.get(region, [])
+        buttons = []
+
+        for label, tz_id in tz_list:
+            buttons.append([
+                InlineKeyboardButton(text=label, callback_data=f"tz:{tz_id}")
+            ])
+
+        # Add back button
+        buttons.append([
+            InlineKeyboardButton(text="⬅️ Back to regions", callback_data="tz_region:back")
+        ])
+
+        return InlineKeyboardMarkup(buttons)
+
+    def create_settings_keyboard(self, current_timezone: str) -> InlineKeyboardMarkup:
+        """Create settings menu keyboard."""
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    text=f"🕐 Timezone: {current_timezone}",
+                    callback_data="settings:timezone"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="✅ Done", callback_data="settings:done"),
             ],
         ])

@@ -1,6 +1,9 @@
 """Database connection and management."""
 
+import asyncio
 import logging
+import os
+import ssl
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
 
@@ -11,6 +14,22 @@ logger = logging.getLogger(__name__)
 
 # Global database instance
 _database: Optional["Database"] = None
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_DELAY = 1.0  # seconds
+
+
+def _is_connection_error(e: Exception) -> bool:
+    """Check if exception is a transient connection error that can be retried."""
+    connection_errors = (
+        asyncpg.ConnectionDoesNotExistError,
+        asyncpg.InterfaceError,
+        ConnectionResetError,
+        ConnectionRefusedError,
+        OSError,
+    )
+    return isinstance(e, connection_errors) or "connection" in str(e).lower()
 
 
 class Database:
@@ -25,6 +44,7 @@ class Database:
         password: str = "",
         min_connections: int = 2,
         max_connections: int = 10,
+        use_ssl: bool = True,
     ):
         self.host = host
         self.port = port
@@ -33,24 +53,61 @@ class Database:
         self.password = password
         self.min_connections = min_connections
         self.max_connections = max_connections
+        self.use_ssl = use_ssl
         self._pool: Optional[Pool] = None
+        self._connecting = False
 
     async def connect(self) -> None:
         """Create connection pool."""
         if self._pool is not None:
             return
 
-        logger.info(f"Connecting to database {self.database} at {self.host}:{self.port}")
-        self._pool = await asyncpg.create_pool(
-            host=self.host,
-            port=self.port,
-            database=self.database,
-            user=self.user,
-            password=self.password,
-            min_size=self.min_connections,
-            max_size=self.max_connections,
-        )
-        logger.info("Database connection pool created")
+        if self._connecting:
+            # Wait for existing connection attempt
+            while self._connecting:
+                await asyncio.sleep(0.1)
+            return
+
+        self._connecting = True
+        try:
+            logger.info(f"Connecting to database {self.database} at {self.host}:{self.port}")
+
+            # SSL context for Supabase/cloud databases
+            ssl_context = None
+            if self.use_ssl:
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
+            self._pool = await asyncpg.create_pool(
+                host=self.host,
+                port=self.port,
+                database=self.database,
+                user=self.user,
+                password=self.password,
+                min_size=self.min_connections,
+                max_size=self.max_connections,
+                ssl=ssl_context if self.use_ssl else False,
+                # Connection health settings
+                command_timeout=60,
+                # Reset stale connections
+                max_inactive_connection_lifetime=60.0,
+            )
+            logger.info("Database connection pool created")
+        finally:
+            self._connecting = False
+
+    async def reconnect(self) -> None:
+        """Force reconnection to database."""
+        logger.info("Reconnecting to database...")
+        if self._pool is not None:
+            try:
+                await self._pool.close()
+            except Exception as e:
+                logger.warning(f"Error closing pool during reconnect: {e}")
+            self._pool = None
+        await self.connect()
+        logger.info("Database reconnected")
 
     async def disconnect(self) -> None:
         """Close connection pool."""
@@ -80,100 +137,51 @@ class Database:
                 yield connection
 
     async def execute(self, query: str, *args) -> str:
-        """Execute a query."""
-        async with self.acquire() as conn:
-            return await conn.execute(query, *args)
+        """Execute a query with retry on connection errors."""
+        return await self._execute_with_retry("execute", query, *args)
 
     async def fetch(self, query: str, *args) -> list:
-        """Fetch multiple rows."""
-        async with self.acquire() as conn:
-            return await conn.fetch(query, *args)
+        """Fetch multiple rows with retry on connection errors."""
+        return await self._execute_with_retry("fetch", query, *args)
 
     async def fetchrow(self, query: str, *args) -> Optional[asyncpg.Record]:
-        """Fetch a single row."""
-        async with self.acquire() as conn:
-            return await conn.fetchrow(query, *args)
+        """Fetch a single row with retry on connection errors."""
+        return await self._execute_with_retry("fetchrow", query, *args)
 
     async def fetchval(self, query: str, *args):
-        """Fetch a single value."""
-        async with self.acquire() as conn:
-            return await conn.fetchval(query, *args)
+        """Fetch a single value with retry on connection errors."""
+        return await self._execute_with_retry("fetchval", query, *args)
 
-    async def initialize_schema(self) -> None:
-        """Initialize database schema."""
-        schema_sql = """
-        -- Users table
-        CREATE TABLE IF NOT EXISTS users (
-            id UUID PRIMARY KEY,
-            telegram_id BIGINT UNIQUE NOT NULL,
-            username VARCHAR(255),
-            first_name VARCHAR(255),
-            last_name VARCHAR(255),
-            timezone VARCHAR(50) DEFAULT 'UTC',
-            language VARCHAR(10) DEFAULT 'en',
-            notification_enabled BOOLEAN DEFAULT TRUE,
-            daily_summary_time VARCHAR(5),
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
+    async def _execute_with_retry(self, method: str, query: str, *args):
+        """Execute a database operation with retry logic for connection errors."""
+        last_error = None
 
-        -- Reminders table
-        CREATE TABLE IF NOT EXISTS reminders (
-            id UUID PRIMARY KEY,
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            title VARCHAR(500) NOT NULL,
-            description TEXT,
-            remind_at TIMESTAMP WITH TIME ZONE NOT NULL,
-            repeat_rule VARCHAR(255),
-            status VARCHAR(20) DEFAULT 'pending',
-            snooze_count INTEGER DEFAULT 0,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with self.acquire() as conn:
+                    func = getattr(conn, method)
+                    return await func(query, *args)
+            except Exception as e:
+                last_error = e
+                if _is_connection_error(e):
+                    logger.warning(
+                        f"Database connection error on attempt {attempt + 1}/{MAX_RETRIES}: {e}"
+                    )
+                    if attempt < MAX_RETRIES - 1:
+                        # Try to reconnect before next attempt
+                        try:
+                            await self.reconnect()
+                        except Exception as reconnect_error:
+                            logger.error(f"Reconnection failed: {reconnect_error}")
+                        await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+                    continue
+                else:
+                    # Non-connection error, don't retry
+                    raise
 
-        -- Tasks table
-        CREATE TABLE IF NOT EXISTS tasks (
-            id UUID PRIMARY KEY,
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            title VARCHAR(500) NOT NULL,
-            description TEXT,
-            due_date TIMESTAMP WITH TIME ZONE,
-            priority VARCHAR(20) DEFAULT 'medium',
-            status VARCHAR(20) DEFAULT 'pending',
-            tags TEXT[] DEFAULT '{}',
-            completed_at TIMESTAMP WITH TIME ZONE,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-
-        -- Meetings table
-        CREATE TABLE IF NOT EXISTS meetings (
-            id UUID PRIMARY KEY,
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            title VARCHAR(500) NOT NULL,
-            description TEXT,
-            participants TEXT[] DEFAULT '{}',
-            start_time TIMESTAMP WITH TIME ZONE NOT NULL,
-            end_time TIMESTAMP WITH TIME ZONE NOT NULL,
-            location VARCHAR(500),
-            meeting_link VARCHAR(500),
-            status VARCHAR(20) DEFAULT 'scheduled',
-            reminder_minutes_before INTEGER DEFAULT 15,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-
-        -- Indexes for common queries
-        CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
-        CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id);
-        CREATE INDEX IF NOT EXISTS idx_reminders_remind_at ON reminders(remind_at) WHERE status = 'pending';
-        CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
-        CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date) WHERE status IN ('pending', 'in_progress');
-        CREATE INDEX IF NOT EXISTS idx_meetings_user_id ON meetings(user_id);
-        CREATE INDEX IF NOT EXISTS idx_meetings_start_time ON meetings(start_time) WHERE status = 'scheduled';
-        """
-        await self.execute(schema_sql)
-        logger.info("Database schema initialized")
+        # All retries exhausted
+        logger.error(f"Database operation failed after {MAX_RETRIES} attempts")
+        raise last_error
 
 
 def get_database() -> Database:
@@ -185,19 +193,21 @@ def get_database() -> Database:
 
 
 def init_database(
-    host: str = "localhost",
-    port: int = 5432,
-    database: str = "winky_bot",
-    user: str = "postgres",
-    password: str = "",
+    host: str,
+    port: int,
+    database: str,
+    user: str,
+    password: str,
+    use_ssl: bool = True,
 ) -> Database:
     """Initialize the global database instance."""
     global _database
     _database = Database(
         host=host,
-        port=port,
+        port=int(port),
         database=database,
         user=user,
         password=password,
+        use_ssl=use_ssl,
     )
     return _database

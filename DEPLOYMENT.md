@@ -264,7 +264,7 @@ For schema changes:
 psql -h winky-bot-db.xxxxxxxx.rds.amazonaws.com -U postgres -d winky_bot
 
 # Run migration SQL
-\i app/database/migrations/001_initial_schema.sql
+\i app/database/migrations/2026_01_11_1_initial_schema.sql
 ```
 
 Or use the automatic schema initialization on first run.

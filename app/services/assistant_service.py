@@ -115,11 +115,20 @@ class AssistantService(BaseService):
         reminder = await self.reminder_service.create_from_params(
             user_id=user.id,
             params=action.parameters,
+            user_timezone=user.preferences.timezone,
         )
         time_str = reminder.remind_at.strftime("%Y-%m-%d %H:%M")
+
+        # Build a helpful message showing when they'll be notified
+        message = f"Got it! I'll remind you about \"{reminder.title}\" at {time_str}."
+
+        # If description contains action time info, include it
+        if reminder.description and "Action scheduled for" in reminder.description:
+            message += f"\n\n{reminder.description}"
+
         return ActionResult(
             success=True,
-            message=f"Got it! I'll remind you about \"{reminder.title}\" at {time_str}.",
+            message=message,
             data={"reminder_id": str(reminder.id)},
         )
 
@@ -163,6 +172,7 @@ class AssistantService(BaseService):
         task = await self.task_service.create_from_params(
             user_id=user.id,
             params=action.parameters,
+            user_timezone=user.preferences.timezone,
         )
         due_str = ""
         if task.due_date:
@@ -236,6 +246,7 @@ class AssistantService(BaseService):
         meeting = await self.meeting_service.create_from_params(
             user_id=user.id,
             params=action.parameters,
+            user_timezone=user.preferences.timezone,
         )
         time_str = meeting.start_time.strftime("%Y-%m-%d %H:%M")
         participants_str = ""

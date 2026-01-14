@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.models import Reminder, ReminderStatus
 from app.repositories import ReminderRepository
+from app.utils import DateTimeParser, ReminderTimeCalculator, utc_now
 
 from .base_service import BaseService
 
@@ -16,16 +17,18 @@ logger = logging.getLogger(__name__)
 class ReminderService(BaseService):
     """Service for reminder management operations."""
 
-    def __init__(self, reminder_repository: ReminderRepository):
+    def __init__(self, reminder_repository: ReminderRepository, openai_api_key: str):
         super().__init__()
         self.reminder_repository = reminder_repository
+        self.datetime_parser = DateTimeParser(openai_api_key)
+        self.reminder_calculator = ReminderTimeCalculator()
 
     async def create_reminder(
         self,
         user_id: UUID,
         title: str,
         remind_at: datetime,
-        description: Optional[str] = None,
+        description: str,
         repeat_rule: Optional[str] = None,
     ) -> Reminder:
         """Create a new reminder."""
@@ -44,51 +47,53 @@ class ReminderService(BaseService):
         self,
         user_id: UUID,
         params: Dict[str, Any],
+        user_timezone: str = "UTC",
     ) -> Reminder:
         """Create a reminder from extracted parameters."""
-        title = params.get("task") or params.get("title") or params.get("what", "Reminder")
-        remind_at_str = params.get("datetime") or params.get("when") or params.get("time")
+        title = params.get("title") or params.get("name") or params.get("what", "Reminder")
+        action_time_str = params.get("datetime") or params.get("when") or params.get("time")
 
-        # Parse datetime - for now use a simple approach
-        # In production, use dateparser or similar
-        if isinstance(remind_at_str, datetime):
-            remind_at = remind_at_str
-        elif remind_at_str:
-            # Try to parse common formats
-            remind_at = self._parse_datetime(remind_at_str)
+        # Parse the action datetime (when the thing happens, not when to remind)
+        if isinstance(action_time_str, datetime):
+            action_time = action_time_str
+        elif action_time_str:
+            # Use intelligent datetime parser with user's timezone
+            action_time, confidence, interpretation = await self.datetime_parser.parse(
+                action_time_str,
+                timezone=user_timezone,
+                context_type="reminder",
+            )
+            if action_time is None:
+                # Fallback to 1 hour from now
+                action_time = utc_now() + timedelta(hours=1)
+            self.logger.info(
+                f"Parsed '{action_time_str}' -> {action_time} UTC (timezone: {user_timezone}, confidence: {confidence}, interpretation: {interpretation})"
+            )
         else:
             # Default to 1 hour from now
-            remind_at = datetime.utcnow() + timedelta(hours=1)
+            action_time = utc_now() + timedelta(hours=1)
+
+        # Calculate smart reminder time
+        remind_at, explanation = self.reminder_calculator.calculate_reminder_time(
+            action_time=action_time,
+            item_type="reminder",
+        )
+        self.logger.info(f"Smart reminder time: {remind_at} ({explanation})")
+
+        # Build description with action time if not provided
+        description = params.get("description") or ""
+        if action_time != remind_at:
+            # Include the actual action time in the description for context
+            time_until = self.reminder_calculator.get_time_until_action(action_time)
+            if not description:
+                description = f"Action scheduled for {action_time.strftime('%Y-%m-%d %H:%M')} ({time_until})"
 
         return await self.create_reminder(
             user_id=user_id,
             title=title,
             remind_at=remind_at,
-            description=params.get("description"),
+            description=description,
         )
-
-    def _parse_datetime(self, dt_str: str) -> datetime:
-        """Parse datetime string. Simple implementation."""
-        # This is a simplified parser - in production use dateparser library
-        now = datetime.utcnow()
-
-        dt_lower = dt_str.lower()
-        if "tomorrow" in dt_lower:
-            base = now + timedelta(days=1)
-        elif "today" in dt_lower:
-            base = now
-        elif "next week" in dt_lower:
-            base = now + timedelta(weeks=1)
-        else:
-            # Try to parse as ISO format
-            try:
-                return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-            except ValueError:
-                # Default to 1 hour from now
-                return now + timedelta(hours=1)
-
-        # Set default time if only date specified
-        return base.replace(hour=9, minute=0, second=0, microsecond=0)
 
     async def get_reminder(self, reminder_id: UUID) -> Optional[Reminder]:
         """Get a reminder by ID."""
@@ -109,7 +114,7 @@ class ReminderService(BaseService):
 
     async def get_due_reminders(self) -> List[Reminder]:
         """Get all reminders that are due."""
-        return await self.reminder_repository.get_due_reminders(datetime.utcnow())
+        return await self.reminder_repository.get_due_reminders(utc_now())
 
     async def mark_sent(self, reminder_id: UUID) -> Optional[Reminder]:
         """Mark a reminder as sent."""
@@ -121,7 +126,7 @@ class ReminderService(BaseService):
         minutes: int = 15,
     ) -> Optional[Reminder]:
         """Snooze a reminder for the specified minutes."""
-        new_time = datetime.utcnow() + timedelta(minutes=minutes)
+        new_time = utc_now() + timedelta(minutes=minutes)
         return await self.reminder_repository.snooze(reminder_id, new_time)
 
     async def cancel_reminder(self, reminder_id: UUID) -> Optional[Reminder]:

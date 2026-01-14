@@ -6,14 +6,14 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
+from app.utils import utc_now
+
 
 class UserPreferences(BaseModel):
     """User preferences for the assistant."""
 
     timezone: str = "UTC"
     language: str = "en"
-    notification_enabled: bool = True
-    daily_summary_time: Optional[str] = None  # HH:MM format
 
 
 class User(BaseModel):
@@ -24,9 +24,10 @@ class User(BaseModel):
     username: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    telegram_language_code: Optional[str] = None  # Captured from Telegram API
     preferences: UserPreferences = Field(default_factory=UserPreferences)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     @property
     def display_name(self) -> str:

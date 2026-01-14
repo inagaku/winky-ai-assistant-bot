@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
+from app.utils import utc_now
+
 
 class MeetingStatus(str, Enum):
     """Status of a meeting."""
@@ -48,4 +50,4 @@ class Meeting(BaseModel):
     @property
     def is_upcoming(self) -> bool:
         """Check if meeting is in the future."""
-        return self.is_active and self.start_time > datetime.utcnow()
+        return self.is_active and self.start_time > utc_now()

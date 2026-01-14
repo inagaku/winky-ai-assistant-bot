@@ -4,6 +4,7 @@ import asyncio
 import logging
 import signal
 import sys
+import os
 from typing import Optional
 
 from telegram import Bot
@@ -68,6 +69,7 @@ class Application:
         self.scheduler = NotificationScheduler(
             telegram_bot=telegram_bot_instance,
             database=self.database,
+            openai_api_key=self.settings.openai_api_key,
             check_interval_seconds=self.settings.scheduler_check_interval,
         )
         logger.info("Notification scheduler initialized")

@@ -11,6 +11,7 @@ from app.database import Database
 from app.repositories import UserRepository, ReminderRepository, MeetingRepository
 from app.services import ReminderService, MeetingService
 from app.bot.keyboards import InlineKeyboards
+from app.utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class NotificationScheduler:
         self,
         telegram_bot: Bot,
         database: Database,
+        openai_api_key: str,
         check_interval_seconds: int = 60,
     ):
         self.bot = telegram_bot
@@ -41,8 +43,8 @@ class NotificationScheduler:
         self.reminder_repository = ReminderRepository(database)
         self.meeting_repository = MeetingRepository(database)
 
-        self.reminder_service = ReminderService(self.reminder_repository)
-        self.meeting_service = MeetingService(self.meeting_repository)
+        self.reminder_service = ReminderService(self.reminder_repository, openai_api_key)
+        self.meeting_service = MeetingService(self.meeting_repository, openai_api_key)
 
     async def start(self) -> None:
         """Start the scheduler."""
@@ -77,7 +79,7 @@ class NotificationScheduler:
 
     async def _check_and_send_notifications(self) -> None:
         """Check for due reminders and meetings, send notifications."""
-        now = datetime.utcnow()
+        now = utc_now()
 
         # Check reminders
         await self._process_due_reminders(now)

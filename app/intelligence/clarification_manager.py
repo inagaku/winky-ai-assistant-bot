@@ -20,8 +20,8 @@ class ClarificationManager:
     """Manage clarification requests for ambiguous or incomplete inputs."""
 
     # Confidence thresholds
-    HIGH_CONFIDENCE_THRESHOLD = 0.75
-    LOW_CONFIDENCE_THRESHOLD = 0.55
+    HIGH_CONFIDENCE_THRESHOLD = 0.7
+    LOW_CONFIDENCE_THRESHOLD = 0.4
 
     def __init__(self, parameter_extractor: ParameterExtractor):
         self.parameter_extractor = parameter_extractor
@@ -111,11 +111,11 @@ class ClarificationManager:
         """Request a missing required parameter."""
         # User-friendly parameter prompts
         param_prompts = {
-            "task": "What should I remind you about?",
-            "task_name": "What's the name of the task?",
             "title": "What's the title?",
+            "description": "What should I do?",
             "datetime": "When should this be?",
             "datetime_start": "When should this start?",
+            "datetime_end": "When should this end?",
             "participants": "Who should attend?",
         }
 
