@@ -5,7 +5,7 @@ from uuid import UUID
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from app.models import ParsedAction, ActionIntent, ActionStatus
+from app.models import ParsedAction, ActionIntent, ActionStatus, ActionType
 from app.services import UserService, AssistantService, ReminderService, TaskService
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
@@ -120,8 +120,13 @@ class CallbackHandler:
         if hasattr(result, 'intent'):
             # It's a ParsedAction
             action_result = await self.assistant_service.execute_action(result, user)
-            emoji = "✅" if action_result.success else "❌"
-            await query.edit_message_text(f"{emoji} {action_result.message}")
+            create_actions = {ActionType.CREATE_REMINDER, ActionType.CREATE_TASK, ActionType.SCHEDULE_MEETING}
+            if result.action_type in create_actions:
+                message = action_result.message if action_result.success else f"❌ {action_result.message}"
+            else:
+                emoji = "✅" if action_result.success else "❌"
+                message = f"{emoji} {action_result.message}"
+            await query.edit_message_text(message)
         else:
             # It's still a clarification
             await query.edit_message_text(result.message)
@@ -251,8 +256,13 @@ class CallbackHandler:
                 action_result = await self.assistant_service.execute_action(
                     original_action, user
                 )
-                emoji = "✅" if action_result.success else "❌"
-                await query.edit_message_text(f"{emoji} {action_result.message}")
+                create_actions = {ActionType.CREATE_REMINDER, ActionType.CREATE_TASK, ActionType.SCHEDULE_MEETING}
+                if original_action.action_type in create_actions:
+                    message = action_result.message if action_result.success else f"❌ {action_result.message}"
+                else:
+                    emoji = "✅" if action_result.success else "❌"
+                    message = f"{emoji} {action_result.message}"
+                await query.edit_message_text(message)
             else:
                 logger.error(f"Invalid original_action for action_id: {action_id}")
                 await query.edit_message_text(t("something_went_wrong_generic", locale=locale))
@@ -298,8 +308,13 @@ class CallbackHandler:
 
                 # Execute it
                 action_result = await self.assistant_service.execute_action(new_action, user)
-                emoji = "✅" if action_result.success else "❌"
-                await query.edit_message_text(f"{emoji} {action_result.message}")
+                create_actions = {ActionType.CREATE_REMINDER, ActionType.CREATE_TASK, ActionType.SCHEDULE_MEETING}
+                if selected_action_type in create_actions:
+                    message = action_result.message if action_result.success else f"❌ {action_result.message}"
+                else:
+                    emoji = "✅" if action_result.success else "❌"
+                    message = f"{emoji} {action_result.message}"
+                await query.edit_message_text(message)
             else:
                 await query.edit_message_text(t("describe_what_to_do", locale=locale))
 

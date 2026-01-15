@@ -9,7 +9,7 @@ from typing import Optional
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from app.models import ClarificationRequest, ParsedAction
+from app.models import ClarificationRequest, ParsedAction, ActionType
 from app.services import UserService, AssistantService
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
@@ -211,10 +211,15 @@ class MessageHandler:
         """Execute an action and send the result."""
         result = await self.assistant_service.execute_action(action, user)
 
-        # Choose emoji based on success
-        emoji = "✅" if result.success else "❌"
+        # Skip emoji prefix for create actions, show ❌ only for failures
+        create_actions = {ActionType.CREATE_REMINDER, ActionType.CREATE_TASK, ActionType.SCHEDULE_MEETING}
+        if action.action_type in create_actions:
+            message = result.message if result.success else f"❌ {result.message}"
+        else:
+            emoji = "✅" if result.success else "❌"
+            message = f"{emoji} {result.message}"
 
         await update.message.reply_text(
-            f"{emoji} {result.message}",
+            message,
             reply_to_message_id=update.message.message_id,
         )

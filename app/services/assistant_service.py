@@ -346,9 +346,9 @@ class AssistantService(BaseService):
         task_count = await self.task_service.get_active_count(user.id)
         overdue = await self.task_service.get_overdue_tasks(user.id)
         if overdue:
-            lines.append(f"✅ {t('summary_tasks_overdue', locale=locale, count=task_count, overdue=len(overdue))}")
+            lines.append(f"📋 {t('summary_tasks_overdue', locale=locale, count=task_count, overdue=len(overdue))}")
         else:
-            lines.append(f"✅ {t('summary_tasks', locale=locale, count=task_count)}")
+            lines.append(f"📋 {t('summary_tasks', locale=locale, count=task_count)}")
         if tasks:
             for task in tasks[:3]:
                 priority_emoji = {"low": "🟢", "medium": "🟡", "high": "🟠", "urgent": "🔴"}
@@ -387,7 +387,7 @@ class AssistantService(BaseService):
 
 🔔 {t('help_reminders', locale=locale)}
 
-✅ {t('help_tasks', locale=locale)}
+📋 {t('help_tasks', locale=locale)}
 
 📅 {t('help_meetings', locale=locale)}
 
