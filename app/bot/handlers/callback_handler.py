@@ -5,7 +5,7 @@ from uuid import UUID
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from app.models import ParsedAction
+from app.models import ParsedAction, ActionIntent, ActionStatus
 from app.services import UserService, AssistantService, ReminderService, TaskService
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
@@ -259,8 +259,49 @@ class CallbackHandler:
 
         elif response_type == "alt":
             # User selected an alternative action
-            # For now, ask them to rephrase
-            await query.edit_message_text(t("describe_what_to_do", locale=locale))
+            option_index = int(parts[2])
+            alternatives = pending_data.get("alternatives")
+            original_input = pending_data.get("original_input")
+
+            if not alternatives or option_index < 1 or option_index > len(alternatives) - 1:
+                # Invalid alternative index
+                await query.edit_message_text(t("describe_what_to_do", locale=locale))
+                return
+
+            # alternatives[0] is the primary action, alternatives[1:] are the shown alternatives
+            # option_index 1 corresponds to alternatives[1], etc.
+            selected_action_type, _ = alternatives[option_index]
+
+            # Re-resolve with the selected action type
+            if original_input:
+                # Extract parameters for the new action type
+                parameters = await self.intent_resolver.parameter_extractor.extract(
+                    original_input, selected_action_type
+                )
+
+                # Create new intent with high confidence (user explicitly chose this)
+                new_intent = ActionIntent(
+                    action_type=selected_action_type,
+                    confidence=1.0,
+                    original_input=original_input,
+                )
+
+                # Create the action
+                new_action = ParsedAction(
+                    intent=new_intent,
+                    parameters=parameters,
+                    user_id=user.telegram_id,
+                    chat_id=query.message.chat_id,
+                    message_id=query.message.message_id,
+                    status=ActionStatus.PENDING,
+                )
+
+                # Execute it
+                action_result = await self.assistant_service.execute_action(new_action, user)
+                emoji = "✅" if action_result.success else "❌"
+                await query.edit_message_text(f"{emoji} {action_result.message}")
+            else:
+                await query.edit_message_text(t("describe_what_to_do", locale=locale))
 
         elif response_type == "cancel":
             # User wants to cancel or do something else

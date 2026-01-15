@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -59,6 +59,7 @@ class ClarificationRequest(BaseModel):
     parameter: Optional[str] = None  # Which parameter needs clarification
     options: List[str] = Field(default_factory=list)  # Suggested options
     original_action: Optional["ParsedAction"] = None
+    alternatives: Optional[List[Tuple["ActionType", float]]] = None  # Alternative actions with scores
 
     class Config:
         arbitrary_types_allowed = True

@@ -106,6 +106,7 @@ class ClarificationManager:
             message=message,
             options=options,
             original_action=None,  # Will be set by caller if needed
+            alternatives=alternatives,  # Store alternatives for callback handling
         )
 
     def _request_missing_parameter(

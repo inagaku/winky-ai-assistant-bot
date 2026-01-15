@@ -161,6 +161,10 @@ Return ONLY the JSON object, no other text."""
         # Default time based on context
         default_hour = 9 if context_type == "reminder" else 10 if context_type == "meeting" else 18
 
+        def to_utc(dt: datetime) -> datetime:
+            """Convert timezone-aware datetime to naive UTC."""
+            return dt.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
         # Pattern: "in X hours/minutes"
         in_match = re.match(r'in\s+(\d+)\s*(hour|hr|minute|min)s?', text_lower)
         if in_match:
@@ -170,20 +174,20 @@ Return ONLY the JSON object, no other text."""
                 result = now + timedelta(hours=amount)
             else:
                 result = now + timedelta(minutes=amount)
-            return result.replace(tzinfo=None), 0.95, f"In {amount} {unit}(s) from now"
+            return to_utc(result), 0.95, f"In {amount} {unit}(s) from now"
 
         # Pattern: "tomorrow"
         if "tomorrow" in text_lower:
             base = now + timedelta(days=1)
             hour, minute = self._extract_time(text_lower, default_hour)
             result = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            return result.replace(tzinfo=None), 0.95, f"Tomorrow at {hour:02d}:{minute:02d}"
+            return to_utc(result), 0.95, f"Tomorrow at {hour:02d}:{minute:02d}"
 
         # Pattern: "today"
         if text_lower.startswith("today") or "today" in text_lower:
             hour, minute = self._extract_time(text_lower, default_hour)
             result = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            return result.replace(tzinfo=None), 0.95, f"Today at {hour:02d}:{minute:02d}"
+            return to_utc(result), 0.95, f"Today at {hour:02d}:{minute:02d}"
 
         # Pattern: "next week"
         if "next week" in text_lower:
@@ -194,7 +198,7 @@ Return ONLY the JSON object, no other text."""
             base = now + timedelta(days=days_until_monday)
             hour, minute = self._extract_time(text_lower, default_hour)
             result = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            return result.replace(tzinfo=None), 0.9, f"Next week (Monday) at {hour:02d}:{minute:02d}"
+            return to_utc(result), 0.9, f"Next week (Monday) at {hour:02d}:{minute:02d}"
 
         # Pattern: specific day names
         days = {
@@ -212,7 +216,7 @@ Return ONLY the JSON object, no other text."""
                 base = now + timedelta(days=days_ahead)
                 hour, minute = self._extract_time(text_lower, default_hour)
                 result = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                return result.replace(tzinfo=None), 0.9, f"{day_name.capitalize()} at {hour:02d}:{minute:02d}"
+                return to_utc(result), 0.9, f"{day_name.capitalize()} at {hour:02d}:{minute:02d}"
 
         # Pattern: "this weekend"
         if "weekend" in text_lower:
@@ -223,7 +227,7 @@ Return ONLY the JSON object, no other text."""
             base = now + timedelta(days=days_until_saturday)
             hour, minute = self._extract_time(text_lower, default_hour)
             result = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            return result.replace(tzinfo=None), 0.85, f"This weekend (Saturday) at {hour:02d}:{minute:02d}"
+            return to_utc(result), 0.85, f"This weekend (Saturday) at {hour:02d}:{minute:02d}"
 
         # No quick pattern matched
         return None, 0.0, ""
@@ -280,7 +284,9 @@ Return ONLY the JSON object, no other text."""
         # Try ISO format
         try:
             dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            return dt.replace(tzinfo=None), 0.95, "Parsed as ISO format"
+            # Convert to UTC for storage
+            dt_utc = dt.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+            return dt_utc, 0.95, "Parsed as ISO format"
         except ValueError:
             pass
 
@@ -291,7 +297,9 @@ Return ONLY the JSON object, no other text."""
         result = (now + timedelta(days=1)).replace(
             hour=default_hour, minute=0, second=0, microsecond=0
         )
-        return result.replace(tzinfo=None), 0.3, "Could not parse, defaulting to tomorrow"
+        # Convert to UTC for storage
+        result_utc = result.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        return result_utc, 0.3, "Could not parse, defaulting to tomorrow"
 
 
 # Singleton instance for reuse

@@ -24,6 +24,9 @@ logging.basicConfig(
     ],
 )
 
+# Silence noisy httpx INFO logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 

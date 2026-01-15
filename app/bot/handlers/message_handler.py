@@ -185,6 +185,8 @@ class MessageHandler:
             "original_action": clarification.original_action,
             "clarification_type": clarification.type.value if clarification.type else None,
             "parameter": clarification.parameter,
+            "alternatives": clarification.alternatives,  # Store alternatives for "alt" callback
+            "original_input": clarification.original_action.intent.original_input if clarification.original_action else None,
         }
 
         # Create keyboard with action_id encoded in callback data
