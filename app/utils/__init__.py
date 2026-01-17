@@ -2,7 +2,7 @@
 
 from .datetime_parser import DateTimeParser
 from .reminder_calculator import ReminderTimeCalculator
-from .time_utils import utc_now
+from .time_utils import utc_now, parse_duration
 from .date_formatter import (
     format_datetime,
     format_date,
@@ -15,6 +15,7 @@ __all__ = [
     "DateTimeParser",
     "ReminderTimeCalculator",
     "utc_now",
+    "parse_duration",
     "format_datetime",
     "format_date",
     "format_time",

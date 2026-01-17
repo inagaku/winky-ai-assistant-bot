@@ -15,18 +15,20 @@ logger = logging.getLogger(__name__)
 ACTION_PARAMETERS: Dict[ActionType, Dict[str, Any]] = {
     ActionType.CREATE_REMINDER: {
         "required": ["title", "description"],
-        "optional": ["datetime"],
+        "optional": ["remind_at_explicit", "event_time", "lead_time"],
         "schema": {
-            "title": "Short description of the reminder (string, required)",
-            "description": "Full info about the action to be done (string, required)",
-            "datetime": "When to remind (ISO format or natural language like 'tomorrow at 3pm')",
+            "title": "Short, imperative summary of the reminder suitable as a notification title (string, required). Example: 'Call John', 'Submit tax form'",
+            "description": "Full natural-language description of what needs to be done, including context or details not suitable for the title (string, required)",
+            "remind_at_explicit": "When the user specifies WHEN they want to receive the notification,either as an absolute time (`at 4pm`, `tomorrow morning`) or a relative time (`in 30 minutes','after 2 hours`),and the time is not tied to an event.",
+            "event_time": "When the actual event or action occurs (not the notification). Use if the user describes something happening at a time (e.g., 'the meeting is at 3pm', 'my flight departs tomorrow at 9', 'I need to do it by the end of month'). Natural language time.",
+            "lead_time": "Relative offset before event_time indicating when to notify. Use only if the user specifies a relative time (e.g., '30 minutes before', '2 hours earlier', 'the day before'). Store as a duration string or normalized minutes. If lead_time is set, event_time MUST also be set. Do not infer event_time.",
         },
     },
     ActionType.CREATE_TASK: {
         "required": ["title", "description"],
         "optional": ["datetime", "priority", "tags"],
         "schema": {
-            "title": "Short description of the task (string, required)",
+            "title": "Short, imperative summary of the reminder suitable as a notification title (string, required). Example: 'Call John', 'Submit tax form'",
             "description": "Full info about the task to be done (string, required)",
             "datetime": "Due date (ISO format or natural language)",
             "priority": "Priority level: low, medium, high, urgent",
@@ -37,8 +39,8 @@ ACTION_PARAMETERS: Dict[ActionType, Dict[str, Any]] = {
         "required": ["title", "description"],
         "optional": ["datetime_start", "datetime_end", "participants", "location"],
         "schema": {
-            "title": "Short description of the meeting (string, required)",
-            "description": "Full info about the meeting to be scheduled (string, required)",
+            "title": "Short, imperative summary of the reminder suitable as a notification title (string, required). Example: 'Call with John', 'Vacation discussion'",
+            "description": "Full natural-language description of what needs to be done, including context or details not suitable for the title (string, required)",
             "datetime_start": "Start time (ISO format or natural language)",
             "datetime_end": "End time (ISO format or natural language)",
             "participants": "Comma-separated list of attendees",
@@ -83,7 +85,7 @@ ACTION_PARAMETERS: Dict[ActionType, Dict[str, Any]] = {
 class ParameterExtractor:
     """Extract parameters from user input using LLM."""
 
-    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini"):
+    def __init__(self, openai_api_key: str, model: str = "gpt-4.1-mini"):
         self.client = AsyncOpenAI(api_key=openai_api_key)
         self.model = model
 
@@ -109,7 +111,12 @@ class ParameterExtractor:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a parameter extraction assistant. Extract parameters from user input and return them as JSON. Only include parameters that are explicitly mentioned or can be clearly inferred. Return an empty object {} if no parameters can be extracted.",
+                        "content": (
+                            "Extract only the predefined parameters from the user input and return them as a valid JSON object.\n"
+                            "Include ONLY fields that are explicitly mentioned or clearly implied.\n"
+                            "Do NOT invent values, do NOT guess times, and do NOT include null fields.\n"
+                            "Return JSON only, with no extra text."
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -141,7 +148,7 @@ class ParameterExtractor:
             f"- {key}: {description}" for key, description in schema.items()
         )
 
-        return f"""Extract parameters from this user input for a {action_type.value} action.
+        return f"""Extract parameters from this user input according to the schema.
 
 User input: "{user_input}"
 
@@ -150,10 +157,19 @@ Expected parameters:
 
 Return a JSON object with the extracted parameters. Only include parameters that are explicitly mentioned or can be clearly inferred from the input. If a datetime is mentioned naturally (like "tomorrow" or "in 2 hours"), include it as-is.
 
+IMPORTANT for reminders - distinguish between:
+1. remind_at_explicit: When user says "remind me AT <time>" - this is when they want to RECEIVE the notification
+2. event_time: When user says something "is at <time>" or "happens at <time>" - this is when the EVENT occurs
+3. lead_time: When user says "notify X before" or "remind X before" - this is the advance notice time
+
 Example outputs:
-- For "remind me to call mom tomorrow at 3pm": {{"task": "call mom", "datetime": "tomorrow at 3pm"}}
-- For "create task fix the bug": {{"task_name": "fix the bug"}}
-- For "schedule meeting with John at 2pm": {{"title": "meeting with John", "participants": "John", "datetime_start": "2pm"}}
+- For "remind me at 4pm to buy milk": {{"title": "buy milk", "description": "buy milk", "remind_at_explicit": "4pm"}}
+- For "remind me about the meeting at 4pm": {{"title": "meeting", "description": "meeting at 4pm", "event_time": "4pm"}}
+- For "remind me about doctor at 4pm, notify 1 hour before": {{"title": "doctor", "description": "doctor appointment", "event_time": "4pm", "lead_time": "1 hour"}}
+- For "remind me tomorrow morning to call mom": {{"title": "call mom", "description": "call mom", "remind_at_explicit": "tomorrow morning"}}
+- For "don't let me forget the presentation tomorrow at 2pm": {{"title": "presentation", "description": "presentation", "event_time": "tomorrow at 2pm"}}
+- For "create task fix the bug": {{"title": "fix the bug", "description": "fix the bug"}}
+- For "schedule meeting with John at 2pm": {{"title": "meeting with John", "description": "meeting with John", "participants": "John", "datetime_start": "2pm"}}
 """
 
     def get_missing_parameters(

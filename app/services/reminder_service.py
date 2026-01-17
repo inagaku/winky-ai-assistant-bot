@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.models import Reminder, ReminderStatus
 from app.repositories import ReminderRepository
-from app.utils import DateTimeParser, ReminderTimeCalculator, utc_now, format_datetime
+from app.utils import DateTimeParser, ReminderTimeCalculator, utc_now, format_datetime, parse_duration
 from app.i18n import t
 
 from .base_service import BaseService
@@ -50,44 +50,78 @@ class ReminderService(BaseService):
         params: Dict[str, Any],
         user_timezone: str = "UTC",
     ) -> Reminder:
-        """Create a reminder from extracted parameters."""
-        title = params.get("title") or params.get("name") or params.get("what", "Reminder")
-        action_time_str = params.get("datetime") or params.get("when") or params.get("time")
+        """
+        Create a reminder from extracted parameters.
 
-        # Parse the action datetime (when the thing happens, not when to remind)
-        if isinstance(action_time_str, datetime):
-            action_time = action_time_str
-        elif action_time_str:
-            # Use intelligent datetime parser with user's timezone
-            action_time, confidence, interpretation = await self.datetime_parser.parse(
-                action_time_str,
+        Supports three modes:
+        1. Explicit notification time: "remind me AT 4pm" -> remind_at_explicit
+        2. Event time with lead: "meeting at 4pm, notify 1h before" -> event_time + lead_time
+        3. Event time only: "meeting at 4pm" -> event_time (uses smart calculator)
+        """
+        title = params.get("title") or params.get("name") or params.get("what", "Reminder")
+        description = params.get("description") or ""
+
+        # Extract time parameters
+        remind_at_explicit_str = params.get("remind_at_explicit")
+        event_time_str = params.get("event_time") or params.get("datetime") or params.get("when") or params.get("time")
+        lead_time_str = params.get("lead_time")
+
+        remind_at = None
+        event_time = None
+        explanation = ""
+
+        # Case 1: Explicit notification time - user said "remind me AT <time>"
+        if remind_at_explicit_str:
+            remind_at, confidence, interpretation = await self.datetime_parser.parse(
+                remind_at_explicit_str,
                 timezone=user_timezone,
                 context_type="reminder",
             )
-            if action_time is None:
-                # Fallback to 1 hour from now
-                action_time = utc_now() + timedelta(hours=1)
-            self.logger.info(
-                f"Parsed '{action_time_str}' -> {action_time} UTC (timezone: {user_timezone}, confidence: {confidence}, interpretation: {interpretation})"
-            )
-        else:
-            # Default to 1 hour from now
-            action_time = utc_now() + timedelta(hours=1)
+            if remind_at:
+                explanation = f"Explicit notification time: {interpretation}"
+                self.logger.info(f"Using explicit remind_at: '{remind_at_explicit_str}' -> {remind_at} UTC ({explanation})")
 
-        # Calculate smart reminder time
-        remind_at, explanation = self.reminder_calculator.calculate_reminder_time(
-            action_time=action_time,
-            item_type="reminder",
-        )
-        self.logger.info(f"Smart reminder time: {remind_at} ({explanation})")
+        # Case 2 & 3: Event time provided
+        if remind_at is None and event_time_str:
+            # Parse event time
+            if isinstance(event_time_str, datetime):
+                event_time = event_time_str
+            else:
+                event_time, confidence, interpretation = await self.datetime_parser.parse(
+                    event_time_str,
+                    timezone=user_timezone,
+                    context_type="reminder",
+                )
+                if event_time:
+                    self.logger.info(f"Parsed event_time: '{event_time_str}' -> {event_time} UTC ({interpretation})")
 
-        # Build description with action time if not provided
-        description = params.get("description") or ""
-        if action_time != remind_at:
-            # Include the actual action time in the description for context
-            time_until = self.reminder_calculator.get_time_until_action(action_time)
-            if not description:
-                description = f"Action scheduled for {action_time.strftime('%Y-%m-%d %H:%M')} ({time_until})"
+            if event_time:
+                # Case 2: Event time with lead time
+                if lead_time_str:
+                    lead_minutes = parse_duration(lead_time_str)
+                    if lead_minutes:
+                        remind_at = event_time - timedelta(minutes=lead_minutes)
+                        explanation = f"{lead_minutes} minutes before event at {event_time.strftime('%H:%M')}"
+                        self.logger.info(f"Using lead time: {lead_time_str} ({lead_minutes}min) -> remind_at={remind_at}")
+
+                # Case 3: Event time only - use smart calculator
+                if remind_at is None:
+                    remind_at, explanation = self.reminder_calculator.calculate_reminder_time(
+                        action_time=event_time,
+                        item_type="reminder",
+                    )
+                    self.logger.info(f"Smart reminder time: {remind_at} ({explanation})")
+
+        # Case 4: No time specified - default to 1 hour from now
+        if remind_at is None:
+            remind_at = utc_now() + timedelta(hours=1)
+            explanation = "Default: 1 hour from now"
+            self.logger.info(f"No time specified, defaulting to {remind_at}")
+
+        # Build description with event time context if applicable
+        if event_time and event_time != remind_at and not description:
+            time_until = self.reminder_calculator.get_time_until_action(event_time)
+            description = f"Event at {event_time.strftime('%Y-%m-%d %H:%M')} ({time_until})"
 
         return await self.create_reminder(
             user_id=user_id,

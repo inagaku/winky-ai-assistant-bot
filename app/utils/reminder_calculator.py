@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class TimeCategory(Enum):
     """Categories of time distances for reminder calculation."""
-    IMMEDIATE = "immediate"      # < 30 minutes
+    ON_TIME = "on_time"      # < 30 minutes
     VERY_SOON = "very_soon"      # 30 min - 2 hours
     SOON = "soon"                # 2 - 6 hours
     TODAY = "today"              # Same day, > 6 hours
@@ -121,7 +121,7 @@ class ReminderTimeCalculator:
         days = time_until.days
 
         if hours < 0.5:
-            return TimeCategory.IMMEDIATE
+            return TimeCategory.ON_TIME
         elif hours < 2:
             return TimeCategory.VERY_SOON
         elif hours < 6:
@@ -146,9 +146,9 @@ class ReminderTimeCalculator:
     ) -> Tuple[datetime, str]:
         """Calculate reminder time based on category."""
 
-        if category == TimeCategory.IMMEDIATE:
-            # Notify immediately
-            return now + timedelta(minutes=1), "Immediate - action is very soon"
+        if category == TimeCategory.ON_TIME:
+            # Notify on time event happens
+            return action_time, "On time of event - action is very soon"
 
         elif category == TimeCategory.VERY_SOON:
             # 15 minutes before

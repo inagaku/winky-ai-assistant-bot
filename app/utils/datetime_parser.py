@@ -133,11 +133,8 @@ Return ONLY the JSON object, no other text."""
                 tzinfo=tz,
             )
 
-            # Convert to UTC for storage
-            parsed_utc = parsed_dt.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-
             return (
-                parsed_utc,
+                parsed_dt,
                 result.get("confidence", 0.8),
                 result.get("interpretation", "Parsed by LLM"),
             )
@@ -163,7 +160,7 @@ Return ONLY the JSON object, no other text."""
 
         def to_utc(dt: datetime) -> datetime:
             """Convert timezone-aware datetime to naive UTC."""
-            return dt.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+            return dt.astimezone(ZoneInfo("UTC"))
 
         # Pattern: "in X hours/minutes"
         in_match = re.match(r'in\s+(\d+)\s*(hour|hr|minute|min)s?', text_lower)
@@ -285,7 +282,7 @@ Return ONLY the JSON object, no other text."""
         try:
             dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
             # Convert to UTC for storage
-            dt_utc = dt.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+            dt_utc = dt.astimezone(ZoneInfo("UTC"))
             return dt_utc, 0.95, "Parsed as ISO format"
         except ValueError:
             pass
@@ -298,7 +295,7 @@ Return ONLY the JSON object, no other text."""
             hour=default_hour, minute=0, second=0, microsecond=0
         )
         # Convert to UTC for storage
-        result_utc = result.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        result_utc = result.astimezone(ZoneInfo("UTC"))
         return result_utc, 0.3, "Could not parse, defaulting to tomorrow"
 
 
