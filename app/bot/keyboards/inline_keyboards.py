@@ -4,7 +4,7 @@ from typing import List, Optional, Union
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.i18n import t
-from app.models import ClarificationOption
+from app.models import CallbackPrefix, ClarificationOption
 
 
 class InlineKeyboards:
@@ -21,7 +21,7 @@ class InlineKeyboards:
 
         for option in options:
             # Truncate long options for callback data
-            callback_data = f"option:{option[:50]}"
+            callback_data = CallbackPrefix.OPTION.format(option[:50])
             button = InlineKeyboardButton(text=option, callback_data=callback_data)
             row.append(button)
 
@@ -95,17 +95,17 @@ class InlineKeyboards:
             [
                 InlineKeyboardButton(
                     text=f"✅ {t('button_done', locale=locale)}",
-                    callback_data=f"action:complete:{reminder_id}",
+                    callback_data=CallbackPrefix.ACTION.format("complete", reminder_id),
                 ),
                 InlineKeyboardButton(
                     text=f"😴 {t('button_snooze', locale=locale, minutes=15)}",
-                    callback_data=f"action:snooze:{reminder_id}",
+                    callback_data=CallbackPrefix.ACTION.format("snooze", reminder_id),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=f"⏰ {t('button_change_time', locale=locale)}",
-                    callback_data=f"action:change_time:{reminder_id}",
+                    callback_data=CallbackPrefix.ACTION.format("change_time", reminder_id),
                 ),
             ],
         ])
@@ -120,21 +120,21 @@ class InlineKeyboards:
             [
                 InlineKeyboardButton(
                     text=f"⏰ {t('button_change_time', locale=locale)}",
-                    callback_data=f"action:change_time:{reminder_id}",
+                    callback_data=CallbackPrefix.ACTION.format("change_time", reminder_id),
                 ),
                 InlineKeyboardButton(
                     text=f"✏️ {t('button_edit_title', locale=locale)}",
-                    callback_data=f"action:edit_title:{reminder_id}",
+                    callback_data=CallbackPrefix.ACTION.format("edit_title", reminder_id),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=f"👌 {t('button_ok', locale=locale)}",
-                    callback_data=f"action:ok:{reminder_id}",
+                    callback_data=CallbackPrefix.ACTION.format("ok", reminder_id),
                 ),
                 InlineKeyboardButton(
                     text=f"❌ {t('button_cancel_reminder', locale=locale)}",
-                    callback_data=f"action:delete:{reminder_id}",
+                    callback_data=CallbackPrefix.ACTION.format("delete", reminder_id),
                 ),
             ],
         ])
@@ -149,33 +149,33 @@ class InlineKeyboards:
             [
                 InlineKeyboardButton(
                     text=t('button_30min_earlier', locale=locale),
-                    callback_data=f"adjust_time:{reminder_id}:-30",
+                    callback_data=CallbackPrefix.ADJUST_TIME.format(reminder_id, "-30"),
                 ),
                 InlineKeyboardButton(
                     text=t('button_30min_later', locale=locale),
-                    callback_data=f"adjust_time:{reminder_id}:30",
+                    callback_data=CallbackPrefix.ADJUST_TIME.format(reminder_id, "30"),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=t('button_1h_earlier', locale=locale),
-                    callback_data=f"adjust_time:{reminder_id}:-60",
+                    callback_data=CallbackPrefix.ADJUST_TIME.format(reminder_id, "-60"),
                 ),
                 InlineKeyboardButton(
                     text=t('button_1h_later', locale=locale),
-                    callback_data=f"adjust_time:{reminder_id}:60",
+                    callback_data=CallbackPrefix.ADJUST_TIME.format(reminder_id, "60"),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=f"⌨️ {t('button_enter_time', locale=locale)}",
-                    callback_data=f"action:enter_time:{reminder_id}",
+                    callback_data=CallbackPrefix.ACTION.format("enter_time", reminder_id),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=f"⬅️ {t('button_back', locale=locale)}",
-                    callback_data=f"action:back_to_reminder:{reminder_id}",
+                    callback_data=CallbackPrefix.ACTION.format("back_to_reminder", reminder_id),
                 ),
             ],
         ])
@@ -190,17 +190,17 @@ class InlineKeyboards:
             [
                 InlineKeyboardButton(
                     text=f"✅ {t('button_complete', locale=locale)}",
-                    callback_data=f"action:complete:{task_id}",
+                    callback_data=CallbackPrefix.ACTION.format("complete", task_id),
                 ),
                 InlineKeyboardButton(
                     text=f"📝 {t('button_edit', locale=locale)}",
-                    callback_data=f"action:edit:{task_id}",
+                    callback_data=CallbackPrefix.ACTION.format("edit", task_id),
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=f"🗑️ {t('button_delete', locale=locale)}",
-                    callback_data=f"action:delete:{task_id}",
+                    callback_data=CallbackPrefix.ACTION.format("delete", task_id),
                 ),
             ],
         ])
@@ -215,11 +215,11 @@ class InlineKeyboards:
             [
                 InlineKeyboardButton(
                     text=f"📝 {t('button_edit', locale=locale)}",
-                    callback_data=f"action:edit:{meeting_id}",
+                    callback_data=CallbackPrefix.ACTION.format("edit", meeting_id),
                 ),
                 InlineKeyboardButton(
                     text=f"❌ {t('button_cancel', locale=locale)}",
-                    callback_data=f"action:cancel:{meeting_id}",
+                    callback_data=CallbackPrefix.ACTION.format("cancel", meeting_id),
                 ),
             ],
         ])
@@ -228,15 +228,15 @@ class InlineKeyboards:
         """Create quick time selection options."""
         return InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(text="In 1 hour", callback_data="option:in 1 hour"),
-                InlineKeyboardButton(text="In 2 hours", callback_data="option:in 2 hours"),
+                InlineKeyboardButton(text="In 1 hour", callback_data=CallbackPrefix.OPTION.format("in 1 hour")),
+                InlineKeyboardButton(text="In 2 hours", callback_data=CallbackPrefix.OPTION.format("in 2 hours")),
             ],
             [
-                InlineKeyboardButton(text="Tomorrow 9am", callback_data="option:tomorrow at 9am"),
-                InlineKeyboardButton(text="Tomorrow 2pm", callback_data="option:tomorrow at 2pm"),
+                InlineKeyboardButton(text="Tomorrow 9am", callback_data=CallbackPrefix.OPTION.format("tomorrow at 9am")),
+                InlineKeyboardButton(text="Tomorrow 2pm", callback_data=CallbackPrefix.OPTION.format("tomorrow at 2pm")),
             ],
             [
-                InlineKeyboardButton(text="Next week", callback_data="option:next week"),
+                InlineKeyboardButton(text="Next week", callback_data=CallbackPrefix.OPTION.format("next week")),
             ],
         ])
 
@@ -244,12 +244,12 @@ class InlineKeyboards:
         """Create priority selection keyboard."""
         return InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(text="🟢 Low", callback_data="option:low"),
-                InlineKeyboardButton(text="🟡 Medium", callback_data="option:medium"),
+                InlineKeyboardButton(text="🟢 Low", callback_data=CallbackPrefix.OPTION.format("low")),
+                InlineKeyboardButton(text="🟡 Medium", callback_data=CallbackPrefix.OPTION.format("medium")),
             ],
             [
-                InlineKeyboardButton(text="🟠 High", callback_data="option:high"),
-                InlineKeyboardButton(text="🔴 Urgent", callback_data="option:urgent"),
+                InlineKeyboardButton(text="🟠 High", callback_data=CallbackPrefix.OPTION.format("high")),
+                InlineKeyboardButton(text="🔴 Urgent", callback_data=CallbackPrefix.OPTION.format("urgent")),
             ],
         ])
 
@@ -257,15 +257,15 @@ class InlineKeyboards:
         """Create timezone region selection keyboard."""
         return InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(text="🌎 Americas", callback_data="tz_region:americas"),
-                InlineKeyboardButton(text="🌍 Europe", callback_data="tz_region:europe"),
+                InlineKeyboardButton(text="🌎 Americas", callback_data=CallbackPrefix.TZ_REGION.format("americas")),
+                InlineKeyboardButton(text="🌍 Europe", callback_data=CallbackPrefix.TZ_REGION.format("europe")),
             ],
             [
-                InlineKeyboardButton(text="🌏 Asia", callback_data="tz_region:asia"),
-                InlineKeyboardButton(text="🌏 Pacific", callback_data="tz_region:pacific"),
+                InlineKeyboardButton(text="🌏 Asia", callback_data=CallbackPrefix.TZ_REGION.format("asia")),
+                InlineKeyboardButton(text="🌏 Pacific", callback_data=CallbackPrefix.TZ_REGION.format("pacific")),
             ],
             [
-                InlineKeyboardButton(text="🌍 Africa", callback_data="tz_region:africa"),
+                InlineKeyboardButton(text="🌍 Africa", callback_data=CallbackPrefix.TZ_REGION.format("africa")),
             ],
         ])
 
@@ -324,14 +324,14 @@ class InlineKeyboards:
 
         for label, tz_id in tz_list:
             buttons.append([
-                InlineKeyboardButton(text=label, callback_data=f"tz:{tz_id}")
+                InlineKeyboardButton(text=label, callback_data=CallbackPrefix.TZ.format(tz_id))
             ])
 
         # Add back button
         buttons.append([
             InlineKeyboardButton(
                 text=f"⬅️ {t('button_back_to_regions', locale=locale)}",
-                callback_data="tz_region:back"
+                callback_data=CallbackPrefix.TZ_REGION.format("back")
             )
         ])
 
@@ -355,19 +355,19 @@ class InlineKeyboards:
             [
                 InlineKeyboardButton(
                     text=f"🕐 Timezone: {current_timezone}",
-                    callback_data="settings:timezone"
+                    callback_data=CallbackPrefix.SETTINGS.format("timezone")
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=f"🌐 Language: {lang_display}",
-                    callback_data="settings:language"
+                    callback_data=CallbackPrefix.SETTINGS.format("language")
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=f"✅ {t('button_done', locale=locale)}",
-                    callback_data="settings:done"
+                    callback_data=CallbackPrefix.SETTINGS.format("done")
                 ),
             ],
         ])
@@ -385,14 +385,14 @@ class InlineKeyboards:
         buttons = []
         for label, lang_code in languages:
             buttons.append([
-                InlineKeyboardButton(text=label, callback_data=f"lang:{lang_code}")
+                InlineKeyboardButton(text=label, callback_data=CallbackPrefix.LANG.format(lang_code))
             ])
 
         # Add back button
         buttons.append([
             InlineKeyboardButton(
                 text=f"⬅️ {t('button_back', locale=locale)}",
-                callback_data="settings:back"
+                callback_data=CallbackPrefix.SETTINGS.format("back")
             )
         ])
 

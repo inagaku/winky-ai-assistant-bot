@@ -7,6 +7,7 @@ from app.models import (
     ActionIntent,
     ActionType,
     ActionStatus,
+    CallbackPrefix,
     ClarificationOption,
     ClarificationRequest,
     ClarificationType,
@@ -86,11 +87,11 @@ class IntentResolver:
                 options=[
                     ClarificationOption(
                         text=t("button_show_help", locale=locale),
-                        callback_data="quick:help",
+                        callback_data=CallbackPrefix.QUICK.format("help"),
                     ),
                     ClarificationOption(
                         text=t("button_show_summary", locale=locale),
-                        callback_data="quick:summary",
+                        callback_data=CallbackPrefix.QUICK.format("summary"),
                     ),
                 ],
             )

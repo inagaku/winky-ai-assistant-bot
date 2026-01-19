@@ -7,6 +7,7 @@ from app.config import get_settings
 from app.models import (
     ActionIntent,
     ActionType,
+    CallbackPrefix,
     ClarificationOption,
     ClarificationRequest,
     ClarificationType,
@@ -85,7 +86,7 @@ class ClarificationManager:
         options = [
             ClarificationOption(
                 text=f"{yes_text}, {primary_action}",
-                callback_data="clarify:{action_id}:confirm",
+                callback_data=f"{CallbackPrefix.CLARIFY.value}:{{action_id}}:confirm",
             )
         ]
 
@@ -97,14 +98,14 @@ class ClarificationManager:
                     options.append(
                         ClarificationOption(
                             text=alt_desc.capitalize(),
-                            callback_data=f"clarify:{{action_id}}:alt_{idx}",
+                            callback_data=f"{CallbackPrefix.CLARIFY.value}:{{action_id}}:alt_{idx}",
                         )
                     )
 
         options.append(
             ClarificationOption(
                 text=t("button_something_else", locale=locale),
-                callback_data="clarify:{action_id}:another",
+                callback_data=f"{CallbackPrefix.CLARIFY.value}:{{action_id}}:another",
             )
         )
 
@@ -155,7 +156,7 @@ class ClarificationManager:
                 options.append(
                     ClarificationOption(
                         text=opt_text,
-                        callback_data=f"param:{{action_id}}:option_{idx}",
+                        callback_data=f"{CallbackPrefix.PARAM.value}:{{action_id}}:option_{idx}",
                     )
                 )
 

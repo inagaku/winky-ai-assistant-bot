@@ -5,7 +5,7 @@ from uuid import UUID
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from app.models import ParsedAction, ActionIntent, ActionStatus, ActionType
+from app.models import ParsedAction, ActionIntent, ActionStatus, ActionType, CallbackPrefix
 from app.services import UserService, AssistantService, ReminderService, TaskService
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
@@ -38,7 +38,7 @@ class CallbackHandler:
     async def handle_callback(
         self,
         update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
         """Handle callback queries from inline keyboards."""
         query = update.callback_query
@@ -64,43 +64,33 @@ class CallbackHandler:
             last_name=query.from_user.last_name,
         )
 
-        # Parse callback data
-        if callback_data.startswith("clarify:"):
-            # User responded to a clarification request
-            await self._handle_clarification_response(query, context, user, callback_data)
-        elif callback_data.startswith("option:"):
-            # User selected an option from clarification
-            option_text = callback_data[7:]  # Remove "option:" prefix
-            await self._handle_option_selection(query, context, user, option_text)
-        elif callback_data.startswith("action:"):
-            # Direct action callback
-            action_data = callback_data[7:]
-            await self._handle_action_callback(query, context, user, action_data)
-        elif callback_data.startswith("tz_region:"):
-            # Timezone region selection
-            region = callback_data[10:]  # Remove "tz_region:" prefix
-            await self._handle_timezone_region(query, context, user, region)
-        elif callback_data.startswith("tz:"):
-            # Timezone selection
-            timezone = callback_data[3:]  # Remove "tz:" prefix
-            await self._handle_timezone_selection(query, context, user, timezone)
-        elif callback_data.startswith("settings:"):
-            # Settings callback
-            setting = callback_data[9:]  # Remove "settings:" prefix
-            await self._handle_settings_callback(query, context, user, setting)
-        elif callback_data.startswith("lang:"):
-            # Language selection
-            language = callback_data[5:]  # Remove "lang:" prefix
-            await self._handle_language_selection(query, context, user, language)
-        elif callback_data.startswith("adjust_time:"):
-            # Quick time adjustment: adjust_time:{reminder_id}:{minutes}
-            await self._handle_time_adjustment(query, context, user, callback_data)
-        elif callback_data.startswith("param:"):
-            # Parameter option selection: param:{action_id}:option_{index}
-            await self._handle_param_option(query, context, user, callback_data)
-        elif callback_data.startswith("quick:"):
-            # Quick action: quick:help, quick:summary
-            await self._handle_quick_action(query, context, user, callback_data)
+        # Parse callback data using CallbackPrefix enum
+        if CallbackPrefix.CLARIFY.matches(callback_data):
+            await self._handle_clarification_response(query, callback_context, user, callback_data)
+        elif CallbackPrefix.OPTION.matches(callback_data):
+            option_text = callback_data[len(CallbackPrefix.OPTION.value) + 1:]
+            await self._handle_option_selection(query, callback_context, user, option_text)
+        elif CallbackPrefix.ACTION.matches(callback_data):
+            action_data = callback_data[len(CallbackPrefix.ACTION.value) + 1:]
+            await self._handle_action_callback(query, callback_context, user, action_data)
+        elif CallbackPrefix.TZ_REGION.matches(callback_data):
+            region = callback_data[len(CallbackPrefix.TZ_REGION.value) + 1:]
+            await self._handle_timezone_region(query, callback_context, user, region)
+        elif CallbackPrefix.TZ.matches(callback_data):
+            timezone = callback_data[len(CallbackPrefix.TZ.value) + 1:]
+            await self._handle_timezone_selection(query, callback_context, user, timezone)
+        elif CallbackPrefix.SETTINGS.matches(callback_data):
+            setting = callback_data[len(CallbackPrefix.SETTINGS.value) + 1:]
+            await self._handle_settings_callback(query, callback_context, user, setting)
+        elif CallbackPrefix.LANG.matches(callback_data):
+            language = callback_data[len(CallbackPrefix.LANG.value) + 1:]
+            await self._handle_language_selection(query, callback_context, user, language)
+        elif CallbackPrefix.ADJUST_TIME.matches(callback_data):
+            await self._handle_time_adjustment(query, callback_context, user, callback_data)
+        elif CallbackPrefix.PARAM.matches(callback_data):
+            await self._handle_param_option(query, callback_context, user, callback_data)
+        elif CallbackPrefix.QUICK.matches(callback_data):
+            await self._handle_quick_action(query, callback_context, user, callback_data)
         elif callback_data == "cancel":
             await query.edit_message_text(t("cancelled", locale=user.preferences.language))
         else:
@@ -109,7 +99,7 @@ class CallbackHandler:
     async def _handle_option_selection(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         option_text: str,
     ) -> None:
@@ -151,7 +141,7 @@ class CallbackHandler:
     async def _handle_action_callback(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         action_data: str,
     ) -> None:
@@ -256,7 +246,7 @@ class CallbackHandler:
             # Ask user for new title - store pending edit
             reminder = await self.reminder_service.get_reminder(item_uuid)
             if reminder:
-                context.user_data[PENDING_EDIT_KEY] = {
+                callback_context.user_data[PENDING_EDIT_KEY] = {
                     "type": "title",
                     "reminder_id": item_id,
                     "chat_id": query.message.chat_id,
@@ -272,7 +262,7 @@ class CallbackHandler:
             # Ask user for custom time - store pending edit
             reminder = await self.reminder_service.get_reminder(item_uuid)
             if reminder:
-                context.user_data[PENDING_EDIT_KEY] = {
+                callback_context.user_data[PENDING_EDIT_KEY] = {
                     "type": "time",
                     "reminder_id": item_id,
                     "current_time": reminder.remind_at,
@@ -305,7 +295,7 @@ class CallbackHandler:
     async def _handle_clarification_response(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         callback_data: str,
     ) -> None:
@@ -323,7 +313,7 @@ class CallbackHandler:
         response_type = parts[2]  # confirm, alt_N, or another
 
         # Retrieve the pending action from user_data
-        pending_actions = context.user_data.get(PENDING_ACTIONS_KEY, {})
+        pending_actions = callback_context.user_data.get(PENDING_ACTIONS_KEY, {})
         pending_data = pending_actions.get(action_id)
 
         if not pending_data:
@@ -437,7 +427,7 @@ class CallbackHandler:
     async def _handle_param_option(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         callback_data: str,
     ) -> None:
@@ -464,7 +454,7 @@ class CallbackHandler:
             return
 
         # Retrieve the pending action from user_data
-        pending_actions = context.user_data.get(PENDING_ACTIONS_KEY, {})
+        pending_actions = callback_context.user_data.get(PENDING_ACTIONS_KEY, {})
         pending_data = pending_actions.get(action_id)
 
         if not pending_data:
@@ -515,7 +505,7 @@ class CallbackHandler:
     async def _handle_quick_action(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         callback_data: str,
     ) -> None:
@@ -568,7 +558,7 @@ class CallbackHandler:
     async def _handle_timezone_region(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         region: str,
     ) -> None:
@@ -591,7 +581,7 @@ class CallbackHandler:
     async def _handle_timezone_selection(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         timezone: str,
     ) -> None:
@@ -606,11 +596,11 @@ class CallbackHandler:
             return
 
         # Check if this is during onboarding
-        onboarding_state = context.user_data.get(ONBOARDING_STATE_KEY)
+        onboarding_state = callback_context.user_data.get(ONBOARDING_STATE_KEY)
 
         if onboarding_state and onboarding_state.get("step") == "timezone":
             # Complete onboarding
-            del context.user_data[ONBOARDING_STATE_KEY]
+            del callback_context.user_data[ONBOARDING_STATE_KEY]
 
             completion_message = t("onboarding_complete", locale=locale, timezone=timezone)
             await query.edit_message_text(completion_message)
@@ -627,7 +617,7 @@ class CallbackHandler:
     async def _handle_language_selection(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         language: str,
     ) -> None:
@@ -661,7 +651,7 @@ class CallbackHandler:
     async def _handle_settings_callback(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         setting: str,
     ) -> None:
@@ -698,7 +688,7 @@ class CallbackHandler:
     async def _handle_time_adjustment(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         callback_data: str,
     ) -> None:
@@ -733,7 +723,7 @@ class CallbackHandler:
     async def handle_pending_edit(
         self,
         update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
     ) -> bool:
         """
@@ -741,7 +731,7 @@ class CallbackHandler:
 
         Returns True if a pending edit was processed, False otherwise.
         """
-        pending_edit = context.user_data.get(PENDING_EDIT_KEY)
+        pending_edit = callback_context.user_data.get(PENDING_EDIT_KEY)
         if not pending_edit:
             return False
 
@@ -755,7 +745,7 @@ class CallbackHandler:
         try:
             item_uuid = UUID(reminder_id)
         except ValueError:
-            del context.user_data[PENDING_EDIT_KEY]
+            del callback_context.user_data[PENDING_EDIT_KEY]
             return False
 
         if edit_type == "title":
@@ -789,5 +779,5 @@ class CallbackHandler:
                 return True  # Keep the pending edit active
 
         # Clear the pending edit
-        del context.user_data[PENDING_EDIT_KEY]
+        del callback_context.user_data[PENDING_EDIT_KEY]
         return True

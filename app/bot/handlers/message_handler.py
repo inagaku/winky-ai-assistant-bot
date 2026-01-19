@@ -59,7 +59,7 @@ class MessageHandler:
         self.audio_processor = AudioProcessor(openai_api_key)
         self.keyboards = InlineKeyboards()
 
-    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_text(self, update: Update, callback_context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle text messages."""
         if not update.message or not update.message.text:
             return
@@ -71,7 +71,7 @@ class MessageHandler:
             return
 
         # Show typing indicator
-        await context.bot.send_chat_action(
+        await callback_context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action="typing",
         )
@@ -88,7 +88,7 @@ class MessageHandler:
         locale = user.preferences.language
 
         # Check for pending edit (user is providing title or time for a reminder)
-        if await self._handle_pending_edit(update, context, user, text):
+        if await self._handle_pending_edit(update, callback_context, user, text):
             return
 
         # Resolve intent
@@ -102,14 +102,14 @@ class MessageHandler:
 
         # Handle result
         if isinstance(result, ClarificationRequest):
-            await self._send_clarification(update, context, result)
+            await self._send_clarification(update, callback_context, result)
         elif isinstance(result, ParsedAction):
             await self._execute_action(update, result, user)
         else:
             locale = user.preferences.language
             await update.message.reply_text(t("not_sure", locale=locale))
 
-    async def handle_audio(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_audio(self, update: Update, callback_context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle voice and audio messages."""
         if not update.effective_user or not update.effective_chat:
             return
@@ -135,14 +135,14 @@ class MessageHandler:
             return
 
         # Show typing indicator
-        await context.bot.send_chat_action(
+        await callback_context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action="typing",
         )
 
         # Download and transcribe
         try:
-            file = await context.bot.get_file(audio.file_id)
+            file = await callback_context.bot.get_file(audio.file_id)
 
             # Create temp file
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
@@ -168,7 +168,7 @@ class MessageHandler:
             )
 
             if isinstance(result, ClarificationRequest):
-                await self._send_clarification(update, context, result)
+                await self._send_clarification(update, callback_context, result)
             elif isinstance(result, ParsedAction):
                 await self._execute_action(update, result, user)
 
@@ -179,7 +179,7 @@ class MessageHandler:
     async def _send_clarification(
         self,
         update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         clarification: ClarificationRequest,
     ) -> None:
         """Send a clarification request to the user."""
@@ -187,10 +187,10 @@ class MessageHandler:
         action_id = str(uuid.uuid4())[:8]
 
         # Store the pending action in user_data
-        if PENDING_ACTIONS_KEY not in context.user_data:
-            context.user_data[PENDING_ACTIONS_KEY] = {}
+        if PENDING_ACTIONS_KEY not in callback_context.user_data:
+            callback_context.user_data[PENDING_ACTIONS_KEY] = {}
 
-        context.user_data[PENDING_ACTIONS_KEY][action_id] = {
+        callback_context.user_data[PENDING_ACTIONS_KEY][action_id] = {
             "original_action": clarification.original_action,
             "clarification_type": clarification.type.value if clarification.type else None,
             "parameter": clarification.parameter,
@@ -248,7 +248,7 @@ class MessageHandler:
     async def _handle_pending_edit(
         self,
         update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         text: str,
     ) -> bool:
@@ -259,7 +259,7 @@ class MessageHandler:
         """
         from uuid import UUID
 
-        pending_edit = context.user_data.get(PENDING_EDIT_KEY)
+        pending_edit = callback_context.user_data.get(PENDING_EDIT_KEY)
         if not pending_edit:
             return False
 
@@ -272,7 +272,7 @@ class MessageHandler:
         try:
             item_uuid = UUID(reminder_id)
         except ValueError:
-            del context.user_data[PENDING_EDIT_KEY]
+            del callback_context.user_data[PENDING_EDIT_KEY]
             return False
 
         if edit_type == "title":
@@ -306,5 +306,5 @@ class MessageHandler:
                 return True  # Keep the pending edit active
 
         # Clear the pending edit
-        del context.user_data[PENDING_EDIT_KEY]
+        del callback_context.user_data[PENDING_EDIT_KEY]
         return True

@@ -50,6 +50,31 @@ class ClarificationType(str, Enum):
     AMBIGUOUS_INPUT = "ambiguous_input"
 
 
+class CallbackPrefix(str, Enum):
+    """Prefixes for callback_data in inline keyboards."""
+
+    CLARIFY = "clarify"          # Clarification responses: clarify:{action_id}:confirm
+    PARAM = "param"              # Parameter options: param:{action_id}:option_0
+    QUICK = "quick"              # Quick actions: quick:help, quick:summary
+    ACTION = "action"            # Direct actions: action:complete:{id}
+    ADJUST_TIME = "adjust_time"  # Time adjustments: adjust_time:{id}:-30
+    OPTION = "option"            # Generic options: option:{value}
+    TZ_REGION = "tz_region"      # Timezone regions: tz_region:europe
+    TZ = "tz"                    # Timezone selection: tz:Europe/Moscow
+    SETTINGS = "settings"        # Settings menu: settings:timezone
+    LANG = "lang"                # Language selection: lang:en
+
+    def format(self, *args: str) -> str:
+        """Format callback_data with prefix and arguments."""
+        if args:
+            return f"{self.value}:{':'.join(args)}"
+        return self.value
+
+    def matches(self, callback_data: str) -> bool:
+        """Check if callback_data starts with this prefix."""
+        return callback_data.startswith(f"{self.value}:")
+
+
 class ClarificationOption(BaseModel):
     """A single option for clarification."""
 
