@@ -107,7 +107,7 @@ class SemanticMatcher:
         input_embedding = await self._get_embedding(user_input)
 
         # Use the specified locale, fall back to English if not available
-        embeddings = self._action_embeddings.get(locale) or self._action_embeddings.get("en", {})
+        embeddings = self._action_embeddings.get(locale)
 
         # Find best matching action
         best_action = ActionType.UNKNOWN

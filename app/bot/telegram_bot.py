@@ -76,6 +76,7 @@ class TelegramBot:
             user_service=self.user_service,
             assistant_service=self.assistant_service,
             intent_resolver=self.intent_resolver,
+            reminder_service=self.reminder_service,
             openai_api_key=openai_api_key,
         )
         self.callback_handler = CallbackHandler(

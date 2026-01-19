@@ -48,7 +48,13 @@ class ClarificationType(str, Enum):
     CONFIRM_ACTION = "confirm_action"
     MISSING_PARAMETER = "missing_parameter"
     AMBIGUOUS_INPUT = "ambiguous_input"
-    INVALID_VALUE = "invalid_value"
+
+
+class ClarificationOption(BaseModel):
+    """A single option for clarification."""
+
+    text: str  # Button text to display
+    callback_data: str  # Callback data template (e.g., "clarify:{action_id}:confirm")
 
 
 class ClarificationRequest(BaseModel):
@@ -57,7 +63,7 @@ class ClarificationRequest(BaseModel):
     type: ClarificationType
     message: str
     parameter: Optional[str] = None  # Which parameter needs clarification
-    options: List[str] = Field(default_factory=list)  # Suggested options
+    options: List[ClarificationOption] = Field(default_factory=list)  # Structured options with callback data
     original_action: Optional["ParsedAction"] = None
     alternatives: Optional[List[Tuple["ActionType", float]]] = None  # Alternative actions with scores
 

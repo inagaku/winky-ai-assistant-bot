@@ -15,6 +15,88 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def parse_relative_time_adjustment(text: str) -> Optional[int]:
+    """
+    Parse relative time adjustment like "1 hour earlier" or "30 minutes later".
+
+    Returns:
+        Minutes to adjust (negative for earlier, positive for later).
+        None if parsing fails.
+    """
+    if not text:
+        return None
+
+    text = text.lower().strip()
+
+    # Determine direction
+    is_earlier = any(word in text for word in ['earlier', 'before', 'раньше', 'назад'])
+    is_later = any(word in text for word in ['later', 'after', 'позже', 'позднее', 'вперед', 'вперёд'])
+
+    if not is_earlier and not is_later:
+        return None
+
+    # Parse the duration part
+    duration = parse_duration(text)
+    if duration is None:
+        return None
+
+    return -duration if is_earlier else duration
+
+
+def parse_time_adjustment(text: str, current_time: datetime) -> Optional[datetime]:
+    """
+    Parse time adjustment and return new datetime.
+
+    Supports:
+    - Relative: "1 hour earlier", "30 minutes later", "2 hours before"
+    - Absolute time (keeps date): "3pm", "15:30", "at 4 o'clock"
+
+    Args:
+        text: User input for time adjustment
+        current_time: Current reminder time to adjust
+
+    Returns:
+        New datetime, or None if parsing fails
+    """
+    if not text:
+        return None
+
+    text_lower = text.lower().strip()
+
+    # Try relative adjustment first
+    relative_minutes = parse_relative_time_adjustment(text_lower)
+    if relative_minutes is not None:
+        return current_time + timedelta(minutes=relative_minutes)
+
+    # Try absolute time (HH:MM or "3pm" style) - keep the date
+    time_patterns = [
+        # 24-hour format: 14:30, 9:00
+        (r'^(\d{1,2}):(\d{2})$', lambda m: (int(m.group(1)), int(m.group(2)))),
+        # 12-hour format with am/pm: 3pm, 3:30pm, 3 pm
+        (r'^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$', lambda m: (
+            int(m.group(1)) % 12 + (12 if m.group(3) == 'pm' else 0),
+            int(m.group(2)) if m.group(2) else 0
+        )),
+        # "at X" format: at 3pm, at 15:30
+        (r'^at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$', lambda m: (
+            (int(m.group(1)) % 12 + (12 if m.group(3) == 'pm' else 0)) if m.group(3) else int(m.group(1)),
+            int(m.group(2)) if m.group(2) else 0
+        )),
+    ]
+
+    for pattern, extractor in time_patterns:
+        match = re.match(pattern, text_lower)
+        if match:
+            try:
+                hour, minute = extractor(match)
+                if 0 <= hour < 24 and 0 <= minute < 60:
+                    return current_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            except (ValueError, TypeError):
+                continue
+
+    return None
+
+
 def parse_duration(duration_str: str) -> Optional[int]:
     """
     Parse a duration string into minutes.

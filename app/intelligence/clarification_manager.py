@@ -2,10 +2,12 @@
 
 import logging
 from typing import List, Optional, Tuple, Union
+from app.config import get_settings
 
 from app.models import (
     ActionIntent,
     ActionType,
+    ClarificationOption,
     ClarificationRequest,
     ClarificationType,
     ParsedAction,
@@ -20,12 +22,9 @@ logger = logging.getLogger(__name__)
 class ClarificationManager:
     """Manage clarification requests for ambiguous or incomplete inputs."""
 
-    # Confidence thresholds
-    HIGH_CONFIDENCE_THRESHOLD = 0.7
-    LOW_CONFIDENCE_THRESHOLD = 0.4
-
     def __init__(self, parameter_extractor: ParameterExtractor):
         self.parameter_extractor = parameter_extractor
+        self.settings = get_settings()
 
     async def check_and_clarify(
         self,
@@ -40,23 +39,18 @@ class ClarificationManager:
         Returns:
             ParsedAction if ready to execute, or ClarificationRequest if clarification needed.
         """
-        # Case 1: Very low confidence - we're not sure what the user wants
-        if intent.confidence < self.LOW_CONFIDENCE_THRESHOLD:
+        # Case 1: Low confidence - ask user to confirm or pick alternative
+        if intent.confidence < self.settings.intention_confidence_threshold:
             return self._request_action_confirmation(intent, alternatives, locale)
 
-        # Case 2: Medium confidence - ask for confirmation
-        if intent.confidence < self.HIGH_CONFIDENCE_THRESHOLD:
-            return self._request_action_confirmation(intent, alternatives, locale)
-
-        # Case 3: High confidence but missing required parameters
+        # Case 2: High confidence but missing required parameters
         missing_params = self.parameter_extractor.get_missing_parameters(
             intent.action_type, parameters
         )
         if missing_params:
             return self._request_missing_parameter(intent, parameters, missing_params[0], locale)
 
-        # Case 4: Ready to execute - return as ParsedAction placeholder
-        # The actual ParsedAction will be created by IntentResolver
+        # Case 3: Ready to execute
         return None  # Signal that no clarification is needed
 
     def _request_action_confirmation(
@@ -85,21 +79,36 @@ class ClarificationManager:
         action_key = action_translation_keys.get(intent.action_type)
         primary_action = t(action_key, locale=locale) if action_key else str(intent.action_type.value)
 
-        # Build options from alternatives
-        yes_text = t("btn_yes", locale=locale)
-        options = [f"{yes_text}, {primary_action}"]
+        # Build options from alternatives with callback templates
+        # {action_id} is a placeholder that will be replaced when keyboard is created
+        yes_text = t("button_yes", locale=locale)
+        options = [
+            ClarificationOption(
+                text=f"{yes_text}, {primary_action}",
+                callback_data="clarify:{action_id}:confirm",
+            )
+        ]
+
         if alternatives:
-            for alt_action, score in alternatives[1:3]:  # Top 2 alternatives
-                if score > 0.4:  # Only show reasonable alternatives
+            for idx, (alt_action, score) in enumerate(alternatives[1:3]):  # Top 2 alternatives
+                if score > self.settings.intention_low_confidence_threshold:  # Only show reasonable alternatives
                     alt_key = action_translation_keys.get(alt_action)
                     alt_desc = t(alt_key, locale=locale) if alt_key else str(alt_action.value)
-                    no_text = t("btn_cancel", locale=locale)
-                    options.append(f"{no_text}, {alt_desc}")
+                    options.append(
+                        ClarificationOption(
+                            text=alt_desc.capitalize(),
+                            callback_data=f"clarify:{{action_id}}:alt_{idx}",
+                        )
+                    )
 
-        options.append(t("btn_something_else", locale=locale))
+        options.append(
+            ClarificationOption(
+                text=t("button_something_else", locale=locale),
+                callback_data="clarify:{action_id}:another",
+            )
+        )
 
-        confidence_pct = int(intent.confidence * 100)
-        message = t("clarify_confirm", locale=locale, confidence_pct=confidence_pct, action=primary_action)
+        message = t("clarify_confirm", locale=locale, action=primary_action)
 
         return ClarificationRequest(
             type=ClarificationType.CONFIRM_ACTION,
@@ -136,12 +145,19 @@ class ClarificationManager:
         # Provide helpful time options for datetime parameters
         options = []
         if "datetime" in missing_param.lower():
-            options = [
+            time_options = [
                 t("time_option_1hour", locale=locale),
                 t("time_option_tomorrow_morning", locale=locale),
                 t("time_option_tomorrow_afternoon", locale=locale),
                 t("time_option_next_week", locale=locale),
             ]
+            for idx, opt_text in enumerate(time_options):
+                options.append(
+                    ClarificationOption(
+                        text=opt_text,
+                        callback_data=f"param:{{action_id}}:option_{idx}",
+                    )
+                )
 
         return ClarificationRequest(
             type=ClarificationType.MISSING_PARAMETER,
@@ -194,7 +210,7 @@ class ClarificationManager:
         parameters: dict,
     ) -> bool:
         """Quick check if clarification would be needed."""
-        if intent.confidence < self.HIGH_CONFIDENCE_THRESHOLD:
+        if intent.confidence < self.settings.intention_confidence_threshold:
             return True
 
         missing = self.parameter_extractor.get_missing_parameters(

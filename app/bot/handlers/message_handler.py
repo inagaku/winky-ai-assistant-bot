@@ -10,15 +10,18 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from app.models import ClarificationRequest, ParsedAction, ActionType
-from app.services import UserService, AssistantService
+from app.services import UserService, AssistantService, ReminderService
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
 from app.i18n import t
+from app.utils import format_datetime, parse_time_adjustment
 
 logger = logging.getLogger(__name__)
 
 # Key for storing pending actions in user_data
 PENDING_ACTIONS_KEY = "pending_actions"
+# Key for storing pending edit operations in user_data
+PENDING_EDIT_KEY = "pending_edit"
 
 
 class AudioProcessor:
@@ -46,11 +49,13 @@ class MessageHandler:
         user_service: UserService,
         assistant_service: AssistantService,
         intent_resolver: IntentResolver,
+        reminder_service: ReminderService,
         openai_api_key: str,
     ):
         self.user_service = user_service
         self.assistant_service = assistant_service
         self.intent_resolver = intent_resolver
+        self.reminder_service = reminder_service
         self.audio_processor = AudioProcessor(openai_api_key)
         self.keyboards = InlineKeyboards()
 
@@ -81,6 +86,10 @@ class MessageHandler:
             language_code=telegram_user.language_code,
         )
         locale = user.preferences.language
+
+        # Check for pending edit (user is providing title or time for a reminder)
+        if await self._handle_pending_edit(update, context, user, text):
+            return
 
         # Resolve intent
         result = await self.intent_resolver.resolve(
@@ -187,6 +196,7 @@ class MessageHandler:
             "parameter": clarification.parameter,
             "alternatives": clarification.alternatives,  # Store alternatives for "alt" callback
             "original_input": clarification.original_action.intent.original_input if clarification.original_action else None,
+            "clarification": clarification,  # Store full clarification for param options lookup
         }
 
         # Create keyboard with action_id encoded in callback data
@@ -210,6 +220,7 @@ class MessageHandler:
     ) -> None:
         """Execute an action and send the result."""
         result = await self.assistant_service.execute_action(action, user)
+        locale = user.preferences.language
 
         # Skip emoji prefix for create actions, show ❌ only for failures
         create_actions = {ActionType.CREATE_REMINDER, ActionType.CREATE_TASK, ActionType.SCHEDULE_MEETING}
@@ -219,7 +230,81 @@ class MessageHandler:
             emoji = "✅" if result.success else "❌"
             message = f"{emoji} {result.message}"
 
+        # Add edit keyboard for successful reminder creation
+        keyboard = None
+        if result.success and action.action_type == ActionType.CREATE_REMINDER:
+            reminder_id = result.data.get("reminder_id")
+            if reminder_id:
+                keyboard = self.keyboards.create_reminder_created_keyboard(
+                    reminder_id, locale=locale
+                )
+
         await update.message.reply_text(
             message,
             reply_to_message_id=update.message.message_id,
+            reply_markup=keyboard,
         )
+
+    async def _handle_pending_edit(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        user,
+        text: str,
+    ) -> bool:
+        """
+        Handle text input for pending edits (title or time).
+
+        Returns True if a pending edit was processed, False otherwise.
+        """
+        from uuid import UUID
+
+        pending_edit = context.user_data.get(PENDING_EDIT_KEY)
+        if not pending_edit:
+            return False
+
+        locale = user.preferences.language
+        timezone = user.preferences.timezone
+
+        edit_type = pending_edit.get("type")
+        reminder_id = pending_edit.get("reminder_id")
+
+        try:
+            item_uuid = UUID(reminder_id)
+        except ValueError:
+            del context.user_data[PENDING_EDIT_KEY]
+            return False
+
+        if edit_type == "title":
+            # Update the title
+            reminder = await self.reminder_service.update_title(item_uuid, text)
+            if reminder:
+                time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
+                message = t("title_updated", locale=locale, new_title=text)
+                message += f"\n\n{t('reminder_created', locale=locale, title=reminder.title, time=time_str)}"
+                keyboard = self.keyboards.create_reminder_created_keyboard(reminder_id, locale=locale)
+                await update.message.reply_text(message, reply_markup=keyboard)
+            else:
+                await update.message.reply_text(t("reminder_not_found", locale=locale))
+
+        elif edit_type == "time":
+            # Parse and update the time
+            current_time = pending_edit.get("current_time")
+            new_time = parse_time_adjustment(text, current_time)
+
+            if new_time:
+                reminder = await self.reminder_service.update_remind_at(item_uuid, new_time)
+                if reminder:
+                    time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
+                    message = t("time_updated", locale=locale, new_time=time_str)
+                    keyboard = self.keyboards.create_reminder_created_keyboard(reminder_id, locale=locale)
+                    await update.message.reply_text(message, reply_markup=keyboard)
+                else:
+                    await update.message.reply_text(t("reminder_not_found", locale=locale))
+            else:
+                await update.message.reply_text(t("invalid_time_format", locale=locale))
+                return True  # Keep the pending edit active
+
+        # Clear the pending edit
+        del context.user_data[PENDING_EDIT_KEY]
+        return True

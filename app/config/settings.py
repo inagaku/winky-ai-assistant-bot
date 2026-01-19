@@ -36,9 +36,15 @@ class Settings(BaseSettings):
     )
 
     # NLP
-    confidence_threshold: float = Field(
-        default=0.75,
-        alias="CONFIDENCE_THRESHOLD",
+    intention_confidence_threshold: float = Field(
+        default=0.55,
+        alias="INTENTION_CONFIDENCE_THRESHOLD",
+        description="Minimum confidence to execute action without clarification",
+    )
+
+    intention_low_confidence_threshold: float = Field(
+        default=0.25,
+        alias="INTENTION_LOW_CONFIDENCE_THRESHOLD",
         description="Minimum confidence to execute action without clarification",
     )
 

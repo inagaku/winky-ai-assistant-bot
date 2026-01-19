@@ -8,6 +8,7 @@ from typing import Optional
 from telegram import Bot
 
 from app.database import Database
+from app.i18n import t
 from app.repositories import UserRepository, ReminderRepository, MeetingRepository
 from app.services import ReminderService, MeetingService
 from app.bot.keyboards import InlineKeyboards
@@ -100,9 +101,10 @@ class NotificationScheduler:
                     continue
 
                 # Send notification
-                message = f"🔔 **Reminder**: {reminder.title}"
+                locale = user.preferences.language
+                message = t("reminder_notification_header", locale=locale, title=reminder.title)
                 if reminder.description:
-                    message += f"\n\n{reminder.description}"
+                    message += f"\n\n\"{reminder.description}\""
 
                 keyboard = self.keyboards.create_reminder_actions_keyboard(
                     str(reminder.id)

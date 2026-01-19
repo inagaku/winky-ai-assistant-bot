@@ -1,9 +1,10 @@
 """Inline keyboard builders for Telegram bot."""
 
-from typing import List, Optional
+from typing import List, Optional, Union
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.i18n import t
+from app.models import ClarificationOption
 
 
 class InlineKeyboards:
@@ -35,24 +36,24 @@ class InlineKeyboards:
 
     def create_clarification_keyboard(
         self,
-        options: List[str],
+        options: List[ClarificationOption],
         action_id: str,
         columns: int = 1,
     ) -> InlineKeyboardMarkup:
-        """Create a keyboard for clarification with action_id for tracking."""
+        """Create a keyboard for clarification with action_id for tracking.
+
+        Args:
+            options: List of ClarificationOption with text and callback_data template
+            action_id: The action ID to substitute into callback_data templates
+            columns: Number of buttons per row
+        """
         buttons = []
         row = []
 
-        for i, option in enumerate(options):
-            # Format: clarify:{action_id}:{option_index}:{confirm|alt|cancel}
-            if option.lower().startswith("yes") or option.lower().startswith("да"):
-                callback_data = f"clarify:{action_id}:{i}:confirm"
-            elif option.lower() in ("something else", "что-то другое"):
-                callback_data = f"clarify:{action_id}:{i}:cancel"
-            else:
-                callback_data = f"clarify:{action_id}:{i}:alt"
-
-            button = InlineKeyboardButton(text=option, callback_data=callback_data)
+        for option in options:
+            # Replace {action_id} placeholder in callback_data template
+            callback_data = option.callback_data.format(action_id=action_id)
+            button = InlineKeyboardButton(text=option.text, callback_data=callback_data)
             row.append(button)
 
             if len(row) >= columns:
@@ -74,11 +75,11 @@ class InlineKeyboards:
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    text=t("btn_yes", locale=locale),
+                    text=t("button_yes", locale=locale),
                     callback_data=confirm_data
                 ),
                 InlineKeyboardButton(
-                    text=t("btn_cancel", locale=locale),
+                    text=t("button_cancel", locale=locale),
                     callback_data=cancel_data
                 ),
             ]
@@ -93,12 +94,88 @@ class InlineKeyboards:
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    text=f"✅ {t('btn_done', locale=locale)}",
+                    text=f"✅ {t('button_done', locale=locale)}",
                     callback_data=f"action:complete:{reminder_id}",
                 ),
                 InlineKeyboardButton(
-                    text=f"😴 {t('btn_snooze', locale=locale, minutes=15)}",
+                    text=f"😴 {t('button_snooze', locale=locale, minutes=15)}",
                     callback_data=f"action:snooze:{reminder_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⏰ {t('button_change_time', locale=locale)}",
+                    callback_data=f"action:change_time:{reminder_id}",
+                ),
+            ],
+        ])
+
+    def create_reminder_created_keyboard(
+        self,
+        reminder_id: str,
+        locale: str = "en",
+    ) -> InlineKeyboardMarkup:
+        """Create action buttons shown after reminder creation."""
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    text=f"⏰ {t('button_change_time', locale=locale)}",
+                    callback_data=f"action:change_time:{reminder_id}",
+                ),
+                InlineKeyboardButton(
+                    text=f"✏️ {t('button_edit_title', locale=locale)}",
+                    callback_data=f"action:edit_title:{reminder_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"👌 {t('button_ok', locale=locale)}",
+                    callback_data=f"action:ok:{reminder_id}",
+                ),
+                InlineKeyboardButton(
+                    text=f"❌ {t('button_cancel_reminder', locale=locale)}",
+                    callback_data=f"action:delete:{reminder_id}",
+                ),
+            ],
+        ])
+
+    def create_time_adjustment_keyboard(
+        self,
+        reminder_id: str,
+        locale: str = "en",
+    ) -> InlineKeyboardMarkup:
+        """Create quick time adjustment options."""
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    text=t('button_30min_earlier', locale=locale),
+                    callback_data=f"adjust_time:{reminder_id}:-30",
+                ),
+                InlineKeyboardButton(
+                    text=t('button_30min_later', locale=locale),
+                    callback_data=f"adjust_time:{reminder_id}:30",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=t('button_1h_earlier', locale=locale),
+                    callback_data=f"adjust_time:{reminder_id}:-60",
+                ),
+                InlineKeyboardButton(
+                    text=t('button_1h_later', locale=locale),
+                    callback_data=f"adjust_time:{reminder_id}:60",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⌨️ {t('button_enter_time', locale=locale)}",
+                    callback_data=f"action:enter_time:{reminder_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"⬅️ {t('button_back', locale=locale)}",
+                    callback_data=f"action:back_to_reminder:{reminder_id}",
                 ),
             ],
         ])
@@ -112,17 +189,17 @@ class InlineKeyboards:
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    text=f"✅ {t('btn_complete', locale=locale)}",
+                    text=f"✅ {t('button_complete', locale=locale)}",
                     callback_data=f"action:complete:{task_id}",
                 ),
                 InlineKeyboardButton(
-                    text=f"📝 {t('btn_edit', locale=locale)}",
+                    text=f"📝 {t('button_edit', locale=locale)}",
                     callback_data=f"action:edit:{task_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text=f"🗑️ {t('btn_delete', locale=locale)}",
+                    text=f"🗑️ {t('button_delete', locale=locale)}",
                     callback_data=f"action:delete:{task_id}",
                 ),
             ],
@@ -137,11 +214,11 @@ class InlineKeyboards:
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    text=f"📝 {t('btn_edit', locale=locale)}",
+                    text=f"📝 {t('button_edit', locale=locale)}",
                     callback_data=f"action:edit:{meeting_id}",
                 ),
                 InlineKeyboardButton(
-                    text=f"❌ {t('btn_cancel', locale=locale)}",
+                    text=f"❌ {t('button_cancel', locale=locale)}",
                     callback_data=f"action:cancel:{meeting_id}",
                 ),
             ],
@@ -253,7 +330,7 @@ class InlineKeyboards:
         # Add back button
         buttons.append([
             InlineKeyboardButton(
-                text=f"⬅️ {t('btn_back_to_regions', locale=locale)}",
+                text=f"⬅️ {t('button_back_to_regions', locale=locale)}",
                 callback_data="tz_region:back"
             )
         ])
@@ -289,7 +366,7 @@ class InlineKeyboards:
             ],
             [
                 InlineKeyboardButton(
-                    text=f"✅ {t('btn_done', locale=locale)}",
+                    text=f"✅ {t('button_done', locale=locale)}",
                     callback_data="settings:done"
                 ),
             ],
@@ -314,7 +391,7 @@ class InlineKeyboards:
         # Add back button
         buttons.append([
             InlineKeyboardButton(
-                text=f"⬅️ {t('btn_back', locale=locale)}",
+                text=f"⬅️ {t('button_back', locale=locale)}",
                 callback_data="settings:back"
             )
         ])
