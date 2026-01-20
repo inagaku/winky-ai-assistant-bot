@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from app.services import UserService, AssistantService
 from app.models import ActionType, ActionIntent, ActionStatus, ParsedAction
 from app.bot.keyboards import InlineKeyboards
+from app.bot.user_cache import get_cached_user
 from app.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -38,13 +39,7 @@ class CommandHandler:
         existing_user = await self.user_service.get_user_by_telegram_id(telegram_user.id)
         is_new_user = existing_user is None
 
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-            language_code=telegram_user.language_code,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         locale = user.preferences.language
 
@@ -80,12 +75,7 @@ class CommandHandler:
 
         # Get or create user
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         # Create a help action and execute it
         intent = ActionIntent(
@@ -111,12 +101,7 @@ class CommandHandler:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         intent = ActionIntent(
             action_type=ActionType.SHOW_SUMMARY,
@@ -141,12 +126,7 @@ class CommandHandler:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         intent = ActionIntent(
             action_type=ActionType.LIST_REMINDERS,
@@ -171,12 +151,7 @@ class CommandHandler:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         intent = ActionIntent(
             action_type=ActionType.LIST_TASKS,
@@ -201,12 +176,7 @@ class CommandHandler:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         intent = ActionIntent(
             action_type=ActionType.LIST_MEETINGS,
@@ -231,13 +201,7 @@ class CommandHandler:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-            language_code=telegram_user.language_code,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         locale = user.preferences.language
         settings_message = t("settings_title", locale=locale, name=user.display_name)
