@@ -13,6 +13,7 @@ from app.models import ClarificationRequest, ParsedAction, ActionType
 from app.services import UserService, AssistantService, ReminderService
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
+from app.bot.user_cache import get_cached_user
 from app.i18n import t
 from app.utils import format_datetime, parse_time_adjustment
 
@@ -76,15 +77,8 @@ class MessageHandler:
             action="typing",
         )
 
-        # Get or create user
-        telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-            language_code=telegram_user.language_code,
-        )
+        # Get or create user (from cache if available)
+        user = await get_cached_user(update, callback_context, self.user_service)
         locale = user.preferences.language
 
         # Check for pending edit (user is providing title or time for a reminder)
@@ -94,7 +88,7 @@ class MessageHandler:
         # Resolve intent
         result = await self.intent_resolver.resolve(
             user_input=text,
-            user_id=telegram_user.id,
+            user_id=update.effective_user.id,
             chat_id=update.effective_chat.id,
             message_id=update.message.message_id,
             locale=locale,
@@ -114,15 +108,8 @@ class MessageHandler:
         if not update.effective_user or not update.effective_chat:
             return
 
-        # Get or create user first for language preference
-        telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-            language_code=telegram_user.language_code,
-        )
+        # Get or create user first for language preference (from cache if available)
+        user = await get_cached_user(update, callback_context, self.user_service)
         locale = user.preferences.language
 
         # Get the audio file
@@ -161,7 +148,7 @@ class MessageHandler:
 
             result = await self.intent_resolver.resolve(
                 user_input=transcribed_text,
-                user_id=telegram_user.id,
+                user_id=update.effective_user.id,
                 chat_id=update.effective_chat.id,
                 message_id=update.message.message_id,
                 locale=locale,
@@ -235,7 +222,7 @@ class MessageHandler:
         if result.success and action.action_type == ActionType.CREATE_REMINDER:
             reminder_id = result.data.get("reminder_id")
             if reminder_id:
-                keyboard = self.keyboards.create_reminder_created_keyboard(
+                keyboard = self.keyboards.create_reminder_selected_keyboard(
                     reminder_id, locale=locale
                 )
 
@@ -282,7 +269,7 @@ class MessageHandler:
                 time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
                 message = t("title_updated", locale=locale, new_title=text)
                 message += f"\n\n{t('reminder_created', locale=locale, title=reminder.title, time=time_str)}"
-                keyboard = self.keyboards.create_reminder_created_keyboard(reminder_id, locale=locale)
+                keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
                 await update.message.reply_text(message, reply_markup=keyboard)
             else:
                 await update.message.reply_text(t("reminder_not_found", locale=locale))
@@ -297,7 +284,7 @@ class MessageHandler:
                 if reminder:
                     time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
                     message = t("time_updated", locale=locale, new_time=time_str)
-                    keyboard = self.keyboards.create_reminder_created_keyboard(reminder_id, locale=locale)
+                    keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
                     await update.message.reply_text(message, reply_markup=keyboard)
                 else:
                     await update.message.reply_text(t("reminder_not_found", locale=locale))
