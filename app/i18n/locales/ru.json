@@ -31,6 +31,7 @@
   "button_1h_later": "На 1ч позже",
   "button_enter_time": "Ввести время",
   "button_ok": "ОК",
+  "button_save": "Сохранить",
   "button_show_help": "Показать справку",
   "button_show_summary": "Показать сводку",
 
@@ -66,6 +67,8 @@
   "action_help": "показать справку",
 
   "reminder_created": "Понял! Напомню тебе о \n\"{title}\" \n{time}.",
+  "reminder_editing": "Редактирование напоминания:\n\"{title}\"\n{time}",
+  "current_time": "Текущее время",
   "reminder_action_info": "Запланировано на {time} ({time_until})",
   "reminder_not_found": "Напоминание не найдено.",
   "reminder_deleted": "Напоминание удалено.",
@@ -136,7 +139,7 @@
   "no_problem": "Без проблем! Опиши, что ты хочешь сделать.",
   "try_again": "Попробуй ещё раз с новым сообщением.",
 
-  "change_time_prompt": "Текущее время: {current_time}\n\nВыбери корректировку или введи новое время:",
+  "change_time_prompt": "Текущее время: {time}\n\nВыбери корректировку или введи новое время:",
   "enter_new_title": "Текущее название: \"{current_title}\"\n\nВведи новое название:",
   "enter_new_time": "Введи новое время.\n\nМожно использовать:\n- Точное время: \"15:00\", \"3pm\"\n- Относительное: \"на 1 час раньше\", \"на 30 минут позже\"",
   "time_updated": "Время изменено на {new_time}",

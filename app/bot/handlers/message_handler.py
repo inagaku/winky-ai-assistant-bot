@@ -4,18 +4,16 @@ import logging
 import os
 import tempfile
 import uuid
-from typing import Optional
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from app.models import ClarificationRequest, ParsedAction, ActionType
-from app.services import UserService, AssistantService, ReminderService
-from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
 from app.bot.user_cache import get_cached_user
 from app.i18n import t
-from app.utils import format_datetime, parse_time_adjustment
+from app.intelligence import IntentResolver
+from app.models import ClarificationRequest, ParsedAction, ActionType
+from app.services import UserService, AssistantService, ReminderService
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +78,6 @@ class MessageHandler:
         # Get or create user (from cache if available)
         user = await get_cached_user(update, callback_context, self.user_service)
         locale = user.preferences.language
-
-        # Check for pending edit (user is providing title or time for a reminder)
-        if await self._handle_pending_edit(update, callback_context, user, text):
-            return
 
         # Resolve intent
         result = await self.intent_resolver.resolve(
@@ -231,67 +225,3 @@ class MessageHandler:
             reply_to_message_id=update.message.message_id,
             reply_markup=keyboard,
         )
-
-    async def _handle_pending_edit(
-        self,
-        update: Update,
-        callback_context: ContextTypes.DEFAULT_TYPE,
-        user,
-        text: str,
-    ) -> bool:
-        """
-        Handle text input for pending edits (title or time).
-
-        Returns True if a pending edit was processed, False otherwise.
-        """
-        from uuid import UUID
-
-        pending_edit = callback_context.user_data.get(PENDING_EDIT_KEY)
-        if not pending_edit:
-            return False
-
-        locale = user.preferences.language
-        timezone = user.preferences.timezone
-
-        edit_type = pending_edit.get("type")
-        reminder_id = pending_edit.get("reminder_id")
-
-        try:
-            item_uuid = UUID(reminder_id)
-        except ValueError:
-            del callback_context.user_data[PENDING_EDIT_KEY]
-            return False
-
-        if edit_type == "title":
-            # Update the title
-            reminder = await self.reminder_service.update_title(item_uuid, text)
-            if reminder:
-                time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
-                message = t("title_updated", locale=locale, new_title=text)
-                message += f"\n\n{t('reminder_created', locale=locale, title=reminder.title, time=time_str)}"
-                keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
-                await update.message.reply_text(message, reply_markup=keyboard)
-            else:
-                await update.message.reply_text(t("reminder_not_found", locale=locale))
-
-        elif edit_type == "time":
-            # Parse and update the time
-            current_time = pending_edit.get("current_time")
-            new_time = parse_time_adjustment(text, current_time)
-
-            if new_time:
-                reminder = await self.reminder_service.update_remind_at(item_uuid, new_time)
-                if reminder:
-                    time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
-                    message = t("time_updated", locale=locale, new_time=time_str)
-                    keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
-                    await update.message.reply_text(message, reply_markup=keyboard)
-                else:
-                    await update.message.reply_text(t("reminder_not_found", locale=locale))
-            else:
-                await update.message.reply_text(t("invalid_time_format", locale=locale))
-                return True  # Keep the pending edit active
-
-        # Clear the pending edit
-        del callback_context.user_data[PENDING_EDIT_KEY]
-        return True

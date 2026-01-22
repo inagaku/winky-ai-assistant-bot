@@ -31,6 +31,7 @@
   "button_1h_later": "1h later",
   "button_enter_time": "Enter time",
   "button_ok": "OK",
+  "button_save": "Save",
   "button_show_help": "Show help",
   "button_show_summary": "Show my summary",
 
@@ -66,6 +67,8 @@
   "action_help": "show help",
 
   "reminder_created": "Got it! I'll remind you about \n\"{title}\"\nat {time}.",
+  "reminder_editing": "Editing reminder:\n\"{title}\"\n{time}",
+  "current_time": "Current time",
   "reminder_action_info": "Action scheduled for {time} ({time_until})",
   "reminder_not_found": "Reminder not found.",
   "reminder_deleted": "Reminder deleted.",
@@ -134,7 +137,7 @@
   "no_problem": "No problem! Please describe what you'd like to do.",
   "try_again": "Please try again with a new message.",
 
-  "change_time_prompt": "Current time: {current_time}\n\nChoose an adjustment or enter a new time:",
+  "change_time_prompt": "Current time: {time}\n\nChoose an adjustment or enter a new time:",
   "enter_new_title": "Current title: \"{current_title}\"\n\nEnter the new title:",
   "enter_new_time": "Enter the new time.\n\nYou can use:\n- Exact time: \"3pm\", \"15:30\"\n- Relative: \"1 hour earlier\", \"30 minutes later\"",
   "time_updated": "Time updated to {new_time}",

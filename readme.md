@@ -322,16 +322,16 @@ REMINDER TIME MODES:
 │ 1. remind_at_explicit: "remind me AT 4pm to buy milk"                   │
 │    → User specifies when to receive notification                        │
 │    → remind_at = 4pm                                                    │
-│                                                                          │
+│                                                                         │
 │ 2. event_time + lead_time: "meeting at 4pm, notify 1 hour before"       │
 │    → User specifies event time AND advance notice                       │
 │    → remind_at = 4pm - 1 hour = 3pm                                     │
-│                                                                          │
+│                                                                         │
 │ 3. event_time only: "remind me about meeting at 4pm"                    │
 │    → Smart calculator decides based on time until event                 │
 │    → <1 hour away: 15 min before | 1-3 hours: 30 min before             │
 │    → Same day: 1 hour before | Tomorrow+: morning of event day          │
-│                                                                          │
+│                                                                         │
 │ 4. No time: "remind me to buy milk"                                     │
 │    → Default: 1 hour from now                                           │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -340,11 +340,11 @@ REMINDER TIME MODES:
 SCHEDULED NOTIFICATION FLOW:
 ────────────────────────────
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                        SCHEDULER SERVICE                                  │
-│  • Runs every 60 seconds                                                  │
-│  • Queries: reminders WHERE remind_at <= NOW AND status = PENDING         │
-│                                                                           │
-│  For each due reminder:                                                   │
+│                        SCHEDULER SERVICE                                 │
+│  • Runs every 60 seconds                                                 │
+│  • Queries: reminders WHERE remind_at <= NOW AND status = PENDING        │
+│                                                                          │
+│  For each due reminder:                                                  │
 │   1. Send notification:  "🔔 Reminder: {title}"                           │
 │      [✅ Done] [😴 Snooze 15m]                                            │
 │   2. Mark reminder as SENT                                                │

@@ -10,7 +10,6 @@ State flow:
                                              → Save → SELECTING
                                → OK → END
 """
-
 import logging
 from uuid import UUID
 
@@ -23,22 +22,22 @@ from telegram.ext import (
     ContextTypes,
 )
 
+from app.bot.keyboards import InlineKeyboards
+from app.bot.user_cache import get_cached_user
+from app.i18n import t
 from app.models import ReminderFlow
 from app.services import UserService, ReminderService
-from app.bot.keyboards import InlineKeyboards
-from app.i18n import t
-from app.utils import format_datetime, parse_time_adjustment
-from app.bot.user_cache import get_cached_user
-
+from app.utils import format_datetime, DateTimeParser, time_utils
 from .states import ReminderEditState
 
 logger = logging.getLogger(__name__)
 
 # Key for storing reminder data in context.user_data during conversation
-CONV_REMINDER_KEY = "conv_reminder"
+REMINDER_EDIT_CONV_KEY = "reminder_edit_conv"
 
 # Shortcuts for cleaner code
 EditAction = ReminderFlow.Edit.Action
+EditTimeAction = ReminderFlow.EditTime.Action
 DeleteAction = ReminderFlow.Delete.Action
 
 
@@ -55,21 +54,18 @@ class ReminderEditConversation:
         self,
         user_service: UserService,
         reminder_service: ReminderService,
+        openai_api_key: str
     ):
         self.user_service = user_service
         self.reminder_service = reminder_service
         self.keyboards = InlineKeyboards()
+        self.datetime_parser = DateTimeParser(openai_api_key)
 
     def get_handler(self) -> ConversationHandler:
         """Build and return the ConversationHandler for reminder editing."""
         return ConversationHandler(
-            # Entry points - SELECT, OK, MENU, and DELETE can start the conversation
+            # Entry points - OK, MENU, and DELETE can start the conversation
             entry_points=[
-                # SELECT action → SELECTING state (show [Edit][OK][Delete])
-                CallbackQueryHandler(
-                    self.enter_selected,
-                    pattern=ReminderFlow.Edit.pattern(EditAction.SELECT)
-                ),
                 # OK action → END (user confirmed without editing)
                 CallbackQueryHandler(
                     self.handle_ok,
@@ -105,10 +101,10 @@ class ReminderEditConversation:
                     ),
                 ],
                 ReminderEditState.MENU: [
-                    # Change time button → AWAITING_TIME
+                    # Change time button → TIME_MENU
                     CallbackQueryHandler(
-                        self.start_change_time,
-                        pattern=ReminderFlow.Edit.pattern(EditAction.CHANGE_TIME)
+                        self.enter_time_menu,
+                        pattern=ReminderFlow.Edit.pattern(EditAction.EDIT_TIME)
                     ),
                     # Edit title button → AWAITING_TITLE
                     CallbackQueryHandler(
@@ -122,21 +118,16 @@ class ReminderEditConversation:
                     ),
                 ],
                 ReminderEditState.TIME_MENU: [
-                    # Change time button → AWAITING_TIME
+                    # [Enter time] → AWAITING_TIME
                     CallbackQueryHandler(
-                        self.start_change_time,
-                        pattern=ReminderFlow.Edit.pattern(EditAction.CHANGE_TIME)
+                        self.start_edit_time,
+                        pattern=ReminderFlow.EditTime.pattern(EditTimeAction.CUSTOM)
                     ),
-                    # Edit title button → AWAITING_TITLE
+                    # [30m earlier][30m later][1h earlier][1h later] → END
                     CallbackQueryHandler(
-                        self.start_edit_title,
-                        pattern=ReminderFlow.Edit.pattern(EditAction.EDIT_TITLE)
-                    ),
-                    # Save button → SELECTING
-                    CallbackQueryHandler(
-                        self.handle_save,
-                        pattern=ReminderFlow.Edit.pattern(EditAction.SAVE)
-                    ),
+                        self.handle_time_preset,
+                        pattern=ReminderFlow.EditTime.pattern()
+                    )
                 ],
                 ReminderEditState.AWAITING_TIME: [
                     # Text input for new time
@@ -188,44 +179,6 @@ class ReminderEditConversation:
 
         return reminder
 
-    # --- Entry Points ---
-
-    async def enter_selected(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-    ) -> int:
-        """Entry: Show SELECTING state with [Edit][OK][Delete]."""
-        query = update.callback_query
-        await query.answer()
-
-        user = await self._get_user(update, context)
-        locale = user.preferences.language
-        timezone = user.preferences.timezone
-
-        reminder_id = self._extract_reminder_id(query.data)
-        if not reminder_id:
-            await query.edit_message_text(t("invalid_action", locale=locale))
-            return ConversationHandler.END
-
-        reminder = await self._get_reminder_or_error(query, reminder_id, locale)
-        if not reminder:
-            return ConversationHandler.END
-
-        # Store reminder for later use
-        context.user_data[CONV_REMINDER_KEY] = {
-            "id": reminder_id,
-            "remind_at": reminder.remind_at,
-        }
-
-        # Show reminder with SELECT keyboard
-        time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
-        message = t("reminder_created", locale=locale, title=reminder.title, time=time_str)
-        keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
-        await query.edit_message_text(message, reply_markup=keyboard)
-
-        return ReminderEditState.SELECTED
-
     async def enter_menu(
         self,
         update: Update,
@@ -244,20 +197,19 @@ class ReminderEditConversation:
             await query.edit_message_text(t("invalid_action", locale=locale))
             return ConversationHandler.END
 
-        reminder = await self._get_reminder_or_error(query, reminder_id, locale)
-        if not reminder:
-            return ConversationHandler.END
+        reminder = context.user_data.get(REMINDER_EDIT_CONV_KEY)
+        if not reminder or (reminder_id != str(reminder.id)):
+            reminder = await self._get_reminder_or_error(query, reminder_id, locale)
+            if not reminder:
+                return ConversationHandler.END
 
-        # Store reminder for later use
-        context.user_data[CONV_REMINDER_KEY] = {
-            "id": reminder_id,
-            "remind_at": reminder.remind_at,
-        }
+            # Update stored reminder
+            context.user_data[REMINDER_EDIT_CONV_KEY] = reminder
 
         # Show reminder with MENU keyboard
         time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
         message = t("reminder_editing", locale=locale, title=reminder.title, time=time_str)
-        keyboard = self.keyboards.create_reminder_edit_menu_keyboard(reminder_id, locale=locale)
+        keyboard = self.keyboards.create_reminder_edit_menu_keyboard(str(reminder.id), locale=locale)
         await query.edit_message_text(message, reply_markup=keyboard)
 
         return ReminderEditState.MENU
@@ -275,7 +227,7 @@ class ReminderEditConversation:
         await query.edit_message_reply_markup(reply_markup=None)
 
         # Clean up
-        context.user_data.pop(CONV_REMINDER_KEY, None)
+        context.user_data.pop(REMINDER_EDIT_CONV_KEY, None)
 
         return ConversationHandler.END
 
@@ -296,12 +248,10 @@ class ReminderEditConversation:
         locale = user.preferences.language
 
         # Parse Delete flow callback
-        parsed = ReminderFlow.parse(query.data)
-        if not parsed:
+        reminder_id = self._extract_reminder_id(query.data)
+        if not reminder_id:
             await query.edit_message_text(t("invalid_action", locale=locale))
             return ConversationHandler.END
-
-        _, _, reminder_id = parsed
 
         try:
             deleted = await self.reminder_service.delete_reminder(UUID(reminder_id))
@@ -315,12 +265,12 @@ class ReminderEditConversation:
             await query.edit_message_text(t("reminder_not_found", locale=locale))
 
         # Clean up
-        context.user_data.pop(CONV_REMINDER_KEY, None)
+        context.user_data.pop(REMINDER_EDIT_CONV_KEY, None)
 
         return ConversationHandler.END
 
     # --- MENU State ---
-    async def start_change_time(
+    async def enter_time_menu(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
@@ -338,24 +288,56 @@ class ReminderEditConversation:
             await query.edit_message_text(t("invalid_action", locale=locale))
             return ConversationHandler.END
 
-        reminder = await self._get_reminder_or_error(query, reminder_id, locale)
-        if not reminder:
-            return ConversationHandler.END
+        reminder = context.user_data.get(REMINDER_EDIT_CONV_KEY)
+        if not reminder or (reminder_id != str(reminder.id)):
+            reminder = await self._get_reminder_or_error(query, reminder_id, locale)
+            if not reminder:
+                return ConversationHandler.END
 
-        # Update stored reminder
-        context.user_data[CONV_REMINDER_KEY] = {
-            "id": reminder_id,
-            "remind_at": reminder.remind_at,
-        }
+            # Update stored reminder
+            context.user_data[REMINDER_EDIT_CONV_KEY] = reminder
 
-        current_time = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
-        await query.edit_message_text(
-            t("enter_new_time", locale=locale) + f"\n\n{t('current_time', locale=locale)}: {current_time}"
-        )
+        # Show reminder with SELECT keyboard
+        time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
+        message = t("change_time_prompt", locale=locale, time=time_str)
+        keyboard = self.keyboards.create_reminder_edit_time_menu_keyboard(str(reminder.id), locale=locale)
+        await query.edit_message_text(message, reply_markup=keyboard)
 
         return ReminderEditState.TIME_MENU
 
-    async def change_time_custom(
+    async def start_edit_time(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> int:
+        """User clicked 'Edit Title' → prompt for new title."""
+        query = update.callback_query
+        await query.answer()
+
+        user = await self._get_user(update, context)
+        locale = user.preferences.language
+
+        reminder_id = self._extract_reminder_id(query.data)
+        if not reminder_id:
+            await query.edit_message_text(t("invalid_action", locale=locale))
+            return ConversationHandler.END
+
+        reminder = context.user_data.get(REMINDER_EDIT_CONV_KEY)
+        if not reminder or (reminder_id != str(reminder.id)):
+            reminder = await self._get_reminder_or_error(query, reminder_id, locale)
+            if not reminder:
+                return ConversationHandler.END
+
+            # Update stored reminder
+            context.user_data[REMINDER_EDIT_CONV_KEY] = reminder
+
+        await query.edit_message_text(
+            t("enter_new_time", locale=locale)
+        )
+
+        return ReminderEditState.AWAITING_TIME
+
+    async def handle_time_preset(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
@@ -373,22 +355,84 @@ class ReminderEditConversation:
             await query.edit_message_text(t("invalid_action", locale=locale))
             return ConversationHandler.END
 
-        reminder = await self._get_reminder_or_error(query, reminder_id, locale)
-        if not reminder:
+        reminder = context.user_data.get(REMINDER_EDIT_CONV_KEY)
+        if not reminder or (reminder_id != str(reminder.id)):
+            reminder = await self._get_reminder_or_error(query, reminder_id, locale)
+            if not reminder:
+                return ConversationHandler.END
+
+            # Update stored reminder
+            context.user_data[REMINDER_EDIT_CONV_KEY] = reminder
+
+        _, time_preset, _ = ReminderFlow.parse(query.data)
+        time_delta = time_utils.get_time_delta(time_preset)
+        new_time = reminder.remind_at + time_delta
+
+        try:
+            reminder = await self.reminder_service.update_remind_at(reminder.id, new_time)
+            context.user_data[REMINDER_EDIT_CONV_KEY] = reminder
+        except ValueError:
+            await update.message.reply_text(t("invalid_id", locale=locale))
             return ConversationHandler.END
 
-        # Update stored reminder
-        context.user_data[CONV_REMINDER_KEY] = {
-            "id": reminder_id,
-            "remind_at": reminder.remind_at,
-        }
+        if not reminder:
+            await update.message.reply_text(t("reminder_not_found", locale=locale))
+            return ConversationHandler.END
 
-        current_time = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
-        await query.edit_message_text(
-            t("enter_new_time", locale=locale) + f"\n\n{t('current_time', locale=locale)}: {current_time}"
-        )
+        # Show reminder with MENU keyboard
+        time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
+        message = t("time_updated", locale=locale, new_time=time_str)
+        message += f"\n\n{t('reminder_editing', locale=locale, title=reminder.title, time=time_str)}"
+        keyboard = self.keyboards.create_reminder_edit_menu_keyboard(str(reminder.id), locale=locale)
+        await query.edit_message_text(message, reply_markup=keyboard)
 
-        return ReminderEditState.AWAITING_TIME
+        return ReminderEditState.MENU
+
+    # --- Text Input Handlers ---
+
+    async def handle_time_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> int:
+        """User typed a time value."""
+        text = update.message.text.strip()
+        user = await self._get_user(update, context)
+        locale = user.preferences.language
+        timezone = user.preferences.timezone
+
+        reminder = context.user_data.get(REMINDER_EDIT_CONV_KEY)
+        if not reminder:
+            await update.message.reply_text(t("expired_action", locale=locale))
+            return ConversationHandler.END
+
+        # Parse the time input (supports relative: "1 hour earlier", absolute: "3pm")
+        new_time, _, _ = await self.datetime_parser.parse(text, reminder.remind_at, timezone)
+
+        if not new_time:
+            await update.message.reply_text(t("invalid_time_format", locale=locale))
+            return ReminderEditState.AWAITING_TIME  # Stay in same state
+
+        try:
+            reminder = await self.reminder_service.update_remind_at(reminder.id, new_time)
+            context.user_data[REMINDER_EDIT_CONV_KEY] = reminder
+
+        except ValueError:
+            await update.message.reply_text(t("invalid_id", locale=locale))
+            return ConversationHandler.END
+
+        if not reminder:
+            await update.message.reply_text(t("reminder_not_found", locale=locale))
+            return ConversationHandler.END
+
+        # Show success and MENU keyboard
+        time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
+        message = t("time_updated", locale=locale, new_time=time_str)
+        message += f"\n\n{t('reminder_editing', locale=locale, title=reminder.title, time=time_str)}"
+        keyboard = self.keyboards.create_reminder_edit_menu_keyboard(str(reminder.id), locale=locale)
+        await update.message.reply_text(message, reply_markup=keyboard)
+
+        return ReminderEditState.MENU
 
     async def start_edit_title(
         self,
@@ -407,21 +451,58 @@ class ReminderEditConversation:
             await query.edit_message_text(t("invalid_action", locale=locale))
             return ConversationHandler.END
 
-        reminder = await self._get_reminder_or_error(query, reminder_id, locale)
-        if not reminder:
-            return ConversationHandler.END
+        reminder = context.user_data.get(REMINDER_EDIT_CONV_KEY)
+        if not reminder or (reminder_id != str(reminder.id)):
+            reminder = await self._get_reminder_or_error(query, reminder_id, locale)
+            if not reminder:
+                return ConversationHandler.END
 
-        # Update stored reminder
-        context.user_data[CONV_REMINDER_KEY] = {
-            "id": reminder_id,
-            "remind_at": reminder.remind_at,
-        }
+            # Update stored reminder
+            context.user_data[REMINDER_EDIT_CONV_KEY] = reminder
 
         await query.edit_message_text(
             t("enter_new_title", locale=locale, current_title=reminder.title)
         )
 
         return ReminderEditState.AWAITING_TITLE
+
+    async def handle_title_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> int:
+        """User provided a new title."""
+        new_title = update.message.text.strip()
+        user = await self._get_user(update, context)
+        locale = user.preferences.language
+        timezone = user.preferences.timezone
+
+        reminder = context.user_data.get(REMINDER_EDIT_CONV_KEY)
+        if not reminder:
+            await update.message.reply_text(t("expired_action", locale=locale))
+            return ConversationHandler.END
+
+
+        try:
+            reminder = await self.reminder_service.update_title(reminder.id, new_title)
+            context.user_data[REMINDER_EDIT_CONV_KEY] = reminder
+
+        except ValueError:
+            await update.message.reply_text(t("invalid_id", locale=locale))
+            return ConversationHandler.END
+
+        if not reminder:
+            await update.message.reply_text(t("reminder_not_found", locale=locale))
+            return ConversationHandler.END
+
+        # Show success and MENU keyboard
+        time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
+        message = t("title_updated", locale=locale, new_title=new_title)
+        message += f"\n\n{t('reminder_editing', locale=locale, title=reminder.title, time=time_str)}"
+        keyboard = self.keyboards.create_reminder_edit_menu_keyboard(str(reminder.id), locale=locale)
+        await update.message.reply_text(message, reply_markup=keyboard)
+
+        return ReminderEditState.MENU
 
     async def handle_save(
         self,
@@ -441,113 +522,22 @@ class ReminderEditConversation:
             await query.edit_message_text(t("invalid_action", locale=locale))
             return ConversationHandler.END
 
-        reminder = await self._get_reminder_or_error(query, reminder_id, locale)
-        if not reminder:
-            return ConversationHandler.END
+        reminder = context.user_data.get(REMINDER_EDIT_CONV_KEY)
+        if not reminder or (reminder_id != str(reminder.id)):
+            reminder = await self._get_reminder_or_error(query, reminder_id, locale)
+            if not reminder:
+                return ConversationHandler.END
+
+            # Update stored reminder
+            context.user_data[REMINDER_EDIT_CONV_KEY] = reminder
 
         # Show SELECTING state with [Edit][OK][Delete]
         time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
         message = t("reminder_created", locale=locale, title=reminder.title, time=time_str)
-        keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
+        keyboard = self.keyboards.create_reminder_selected_keyboard(str(reminder.id), locale=locale)
         await query.edit_message_text(message, reply_markup=keyboard)
 
         return ReminderEditState.SELECTED
-
-    # --- Text Input Handlers ---
-
-    async def handle_time_input(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-    ) -> int:
-        """User typed a time value."""
-        text = update.message.text.strip()
-        user = await self._get_user(update, context)
-        locale = user.preferences.language
-        timezone = user.preferences.timezone
-
-        reminder_data = context.user_data.get(CONV_REMINDER_KEY)
-        if not reminder_data:
-            await update.message.reply_text(t("expired_action", locale=locale))
-            return ConversationHandler.END
-
-        reminder_id = reminder_data["id"]
-        current_time = reminder_data["remind_at"]
-
-        # Parse the time input (supports relative: "1 hour earlier", absolute: "3pm")
-        new_time = parse_time_adjustment(text, current_time)
-
-        if not new_time:
-            await update.message.reply_text(t("invalid_time_format", locale=locale))
-            return ReminderEditState.AWAITING_TIME  # Stay in same state
-
-        try:
-            reminder = await self.reminder_service.update_remind_at(UUID(reminder_id), new_time)
-        except ValueError:
-            await update.message.reply_text(t("invalid_id", locale=locale))
-            return ConversationHandler.END
-
-        if not reminder:
-            await update.message.reply_text(t("reminder_not_found", locale=locale))
-            return ConversationHandler.END
-
-        # Update stored reminder
-        context.user_data[CONV_REMINDER_KEY] = {
-            "id": reminder_id,
-            "remind_at": reminder.remind_at,
-        }
-
-        # Show success and MENU keyboard
-        time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
-        message = t("time_updated", locale=locale, new_time=time_str)
-        message += f"\n\n{t('reminder_editing', locale=locale, title=reminder.title, time=time_str)}"
-        keyboard = self.keyboards.create_reminder_edit_menu_keyboard(reminder_id, locale=locale)
-        await update.message.reply_text(message, reply_markup=keyboard)
-
-        return ReminderEditState.MENU
-
-    async def handle_title_input(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-    ) -> int:
-        """User provided a new title."""
-        new_title = update.message.text.strip()
-        user = await self._get_user(update, context)
-        locale = user.preferences.language
-        timezone = user.preferences.timezone
-
-        reminder_data = context.user_data.get(CONV_REMINDER_KEY)
-        if not reminder_data:
-            await update.message.reply_text(t("expired_action", locale=locale))
-            return ConversationHandler.END
-
-        reminder_id = reminder_data["id"]
-
-        try:
-            reminder = await self.reminder_service.update_title(UUID(reminder_id), new_title)
-        except ValueError:
-            await update.message.reply_text(t("invalid_id", locale=locale))
-            return ConversationHandler.END
-
-        if not reminder:
-            await update.message.reply_text(t("reminder_not_found", locale=locale))
-            return ConversationHandler.END
-
-        # Update stored reminder
-        context.user_data[CONV_REMINDER_KEY] = {
-            "id": reminder_id,
-            "remind_at": reminder.remind_at,
-        }
-
-        # Show success and MENU keyboard
-        time_str = format_datetime(reminder.remind_at, locale=locale, timezone=timezone)
-        message = t("title_updated", locale=locale, new_title=new_title)
-        message += f"\n\n{t('reminder_editing', locale=locale, title=reminder.title, time=time_str)}"
-        keyboard = self.keyboards.create_reminder_edit_menu_keyboard(reminder_id, locale=locale)
-        await update.message.reply_text(message, reply_markup=keyboard)
-
-        return ReminderEditState.MENU
 
     # --- Fallbacks ---
 
@@ -565,6 +555,6 @@ class ReminderEditConversation:
             await query.edit_message_text(t("cancelled", locale=locale))
 
         # Clean up
-        context.user_data.pop(CONV_REMINDER_KEY, None)
+        context.user_data.pop(REMINDER_EDIT_CONV_KEY, None)
 
         return ConversationHandler.END

@@ -52,12 +52,12 @@ Rules:
 - "evening" = 18:00
 - "night" = 21:00
 - "end of day" = 17:00
-- If no time specified for a reminder/task, default to 9:00
-- If no time specified for a meeting, default to 10:00
+- If no time specified, default to 8:00
 - "next week" without day = next Monday
 - "this weekend" = Saturday
 - "in X hours/minutes" = relative to current time
 - Always use 24-hour format internally
+- Return time in the same timezone as provided
 
 Return ONLY the JSON object, no other text."""
 
@@ -108,7 +108,7 @@ Return ONLY the JSON object, no other text."""
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Parse this time expression for a {context_type}: \"{text}\""},
+                    {"role": "user", "content": f"Parse this time expression: \"{text}\""},
                 ],
                 temperature=0.1,
                 max_tokens=200,

@@ -29,6 +29,8 @@ from app.services import (
 from app.intelligence import IntentResolver
 
 from .handlers import CommandHandler, MessageHandler, CallbackHandler
+from .conversations import ReminderEditConversation, SettingsConversation
+from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -87,24 +89,48 @@ class TelegramBot:
             task_service=self.task_service,
         )
 
+        # Initialize conversation handlers (for multi-step edit flows)
+        self.reminder_edit_conversation = ReminderEditConversation(
+            user_service=self.user_service,
+            reminder_service=self.reminder_service,
+            openai_api_key=self.openai_api_key
+        )
+        self.settings_conversation = SettingsConversation(
+            user_service=self.user_service,
+        )
+
         # Build application
         self.application: Optional[Application] = None
 
     def _build_application(self) -> Application:
-        """Build the Telegram application with handlers."""
+        """Build the Telegram application with handlers.
+
+        Handler order matters - first matching handler wins:
+        1. Commands (explicit, highest priority)
+        2. Conversation handlers (for multi-step edit flows, entered via callbacks)
+        3. Message handlers (intent resolution and action execution)
+        4. Fallback callback handler (for remaining callbacks)
+        """
         application = Application.builder().token(self.telegram_token).build()
 
-        # Register command handlers
+        # 1. Command handlers
         application.add_handler(TelegramCommandHandler("start", self.command_handler.start))
         application.add_handler(TelegramCommandHandler("help", self.command_handler.help))
         application.add_handler(TelegramCommandHandler("summary", self.command_handler.summary))
-        application.add_handler(TelegramCommandHandler("settings", self.command_handler.settings))
-
         application.add_handler(TelegramCommandHandler("reminders", self.command_handler.reminders))
         application.add_handler(TelegramCommandHandler("tasks", self.command_handler.tasks))
         application.add_handler(TelegramCommandHandler("meetings", self.command_handler.meetings))
 
-        # Register message handlers
+        # 2. Conversation handlers for multi-step flows (entered via CALLBACKS only)
+        # Settings: /settings command and timezone/language selection
+        application.add_handler(self.settings_conversation.get_handler())
+        # Onboarding: timezone selection for new users (triggered from /start welcome)
+        application.add_handler(self.settings_conversation.get_onboarding_handler())
+        # Reminder editing: change time, edit title (triggered from edit buttons)
+        application.add_handler(self.reminder_edit_conversation.get_handler())
+
+        # 3. Message handlers - single entry point for all text/audio
+        # Intent is resolved here, action executed, edit keyboard shown
         application.add_handler(
             TelegramMessageHandler(
                 filters.TEXT & ~filters.COMMAND,
@@ -118,7 +144,8 @@ class TelegramBot:
             )
         )
 
-        # Register callback handler
+        # 4. Fallback callback handler for callbacks not handled by conversations
+        # (notification actions: snooze, complete; task/meeting actions)
         application.add_handler(CallbackQueryHandler(self.callback_handler.handle_callback))
 
         # Error handler

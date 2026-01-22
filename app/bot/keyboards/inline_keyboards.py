@@ -4,36 +4,15 @@ from typing import List, Optional, Union
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.i18n import t
-from app.models import CallbackPrefix, ClarificationOption
+from app.models import (
+    CallbackPrefix,
+    ClarificationOption,
+    ReminderFlow,
+)
 
 
 class InlineKeyboards:
     """Build inline keyboards for various scenarios."""
-
-    def create_options_keyboard(
-        self,
-        options: List[str],
-        columns: int = 1,
-    ) -> InlineKeyboardMarkup:
-        """Create a keyboard with option buttons."""
-        buttons = []
-        row = []
-
-        for option in options:
-            # Truncate long options for callback data
-            callback_data = CallbackPrefix.OPTION.format(option[:50])
-            button = InlineKeyboardButton(text=option, callback_data=callback_data)
-            row.append(button)
-
-            if len(row) >= columns:
-                buttons.append(row)
-                row = []
-
-        if row:
-            buttons.append(row)
-
-        return InlineKeyboardMarkup(buttons)
-
     def create_clarification_keyboard(
         self,
         options: List[ClarificationOption],
@@ -65,191 +44,122 @@ class InlineKeyboards:
 
         return InlineKeyboardMarkup(buttons)
 
-    def create_confirmation_keyboard(
-        self,
-        locale: str = "en",
-        confirm_data: str = "confirm",
-        cancel_data: str = "cancel",
-    ) -> InlineKeyboardMarkup:
-        """Create a simple Yes/No confirmation keyboard."""
-        return InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    text=t("button_yes", locale=locale),
-                    callback_data=confirm_data
-                ),
-                InlineKeyboardButton(
-                    text=t("button_cancel", locale=locale),
-                    callback_data=cancel_data
-                ),
-            ]
-        ])
-
-    def create_reminder_actions_keyboard(
+    # --- Reminder Keyboards (using hierarchical ReminderFlow) ---
+    def create_reminder_notification_keyboard(
         self,
         reminder_id: str,
         locale: str = "en",
     ) -> InlineKeyboardMarkup:
-        """Create action buttons for a reminder notification."""
+        """Create buttons for reminder notification: [Done][Snooze]."""
+        Notify = ReminderFlow.Notify
         return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    text=f"⏰ {t('button_change_time', locale=locale)}",
+                    callback_data=Notify.callback(Notify.Action.CHANGE_TIME, reminder_id),
+                )
+            ],
             [
                 InlineKeyboardButton(
                     text=f"✅ {t('button_done', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("complete", reminder_id),
+                    callback_data=Notify.callback(Notify.Action.DONE, reminder_id),
                 ),
                 InlineKeyboardButton(
                     text=f"😴 {t('button_snooze', locale=locale, minutes=15)}",
-                    callback_data=CallbackPrefix.ACTION.format("snooze", reminder_id),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=f"⏰ {t('button_change_time', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("change_time", reminder_id),
-                ),
-            ],
+                    callback_data=Notify.callback(Notify.Action.SNOOZE, reminder_id),
+                )
+            ]
         ])
 
-    def create_reminder_created_keyboard(
+    def create_reminder_selected_keyboard(
         self,
         reminder_id: str,
         locale: str = "en",
     ) -> InlineKeyboardMarkup:
-        """Create action buttons shown after reminder creation."""
+        """Create SELECT state keyboard: [Edit][OK][Delete].
+
+        Note: Delete uses Delete flow, not Edit flow.
+        """
+        Edit = ReminderFlow.Edit
+        Delete = ReminderFlow.Delete
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    text=f"⏰ {t('button_change_time', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("change_time", reminder_id),
-                ),
-                InlineKeyboardButton(
-                    text=f"✏️ {t('button_edit_title', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("edit_title", reminder_id),
-                ),
+                    text=f"✏️ {t('button_edit', locale=locale)}",
+                    callback_data=Edit.callback(Edit.Action.MENU, reminder_id),
+                )
             ],
             [
                 InlineKeyboardButton(
                     text=f"👌 {t('button_ok', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("ok", reminder_id),
+                    callback_data=Edit.callback(Edit.Action.OK, reminder_id),
                 ),
                 InlineKeyboardButton(
-                    text=f"❌ {t('button_cancel_reminder', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("delete", reminder_id),
+                    text=f"🗑️ {t('button_delete', locale=locale)}",
+                    callback_data=Delete.callback(Delete.Action.CONFIRM, reminder_id),
                 ),
-            ],
+            ]
         ])
 
-    def create_time_adjustment_keyboard(
+    def create_reminder_edit_menu_keyboard(
         self,
         reminder_id: str,
         locale: str = "en",
     ) -> InlineKeyboardMarkup:
-        """Create quick time adjustment options."""
+        """Create MENU state keyboard: [Change Time][Edit Title][Save]."""
+        Edit = ReminderFlow.Edit
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    text=t('button_30min_earlier', locale=locale),
-                    callback_data=CallbackPrefix.ADJUST_TIME.format(reminder_id, "-30"),
+                    text=f"⏰ {t('button_change_time', locale=locale)}",
+                    callback_data=Edit.callback(Edit.Action.EDIT_TIME, reminder_id),
                 ),
                 InlineKeyboardButton(
-                    text=t('button_30min_later', locale=locale),
-                    callback_data=CallbackPrefix.ADJUST_TIME.format(reminder_id, "30"),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=t('button_1h_earlier', locale=locale),
-                    callback_data=CallbackPrefix.ADJUST_TIME.format(reminder_id, "-60"),
-                ),
-                InlineKeyboardButton(
-                    text=t('button_1h_later', locale=locale),
-                    callback_data=CallbackPrefix.ADJUST_TIME.format(reminder_id, "60"),
+                    text=f"✏️ {t('button_edit_title', locale=locale)}",
+                    callback_data=Edit.callback(Edit.Action.EDIT_TITLE, reminder_id),
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text=f"⌨️ {t('button_enter_time', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("enter_time", reminder_id),
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=f"⬅️ {t('button_back', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("back_to_reminder", reminder_id),
+                    text=f"💾 {t('button_save', locale=locale)}",
+                    callback_data=Edit.callback(Edit.Action.SAVE, reminder_id),
                 ),
             ],
         ])
 
-    def create_task_actions_keyboard(
+    def create_reminder_edit_time_menu_keyboard(
         self,
-        task_id: str,
+        reminder_id: str,
         locale: str = "en",
     ) -> InlineKeyboardMarkup:
-        """Create action buttons for a task."""
+        """Create MENU state keyboard: [Change Time][Edit Title][Save]."""
+        EditTime = ReminderFlow.EditTime
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    text=f"✅ {t('button_complete', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("complete", task_id),
+                    text=f"⬅️ {t('button_30min_earlier', locale=locale)}",
+                    callback_data=EditTime.callback(EditTime.Action.MINUS_30M, reminder_id),
                 ),
                 InlineKeyboardButton(
-                    text=f"📝 {t('button_edit', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("edit", task_id),
+                    text=f"➡️ {t('button_30min_later', locale=locale)}",
+                    callback_data=EditTime.callback(EditTime.Action.PLUS_30M, reminder_id),
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text=f"🗑️ {t('button_delete', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("delete", task_id),
-                ),
-            ],
-        ])
-
-    def create_meeting_actions_keyboard(
-        self,
-        meeting_id: str,
-        locale: str = "en",
-    ) -> InlineKeyboardMarkup:
-        """Create action buttons for a meeting."""
-        return InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    text=f"📝 {t('button_edit', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("edit", meeting_id),
+                    text=f"⬅️ {t('button_1h_earlier', locale=locale)}",
+                    callback_data=EditTime.callback(EditTime.Action.MINUS_1H, reminder_id),
                 ),
                 InlineKeyboardButton(
-                    text=f"❌ {t('button_cancel', locale=locale)}",
-                    callback_data=CallbackPrefix.ACTION.format("cancel", meeting_id),
+                    text=f"➡️ {t('button_1h_later', locale=locale)}",
+                    callback_data=EditTime.callback(EditTime.Action.PLUS_1H, reminder_id),
                 ),
             ],
-        ])
-
-    def create_time_options_keyboard(self) -> InlineKeyboardMarkup:
-        """Create quick time selection options."""
-        return InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(text="In 1 hour", callback_data=CallbackPrefix.OPTION.format("in 1 hour")),
-                InlineKeyboardButton(text="In 2 hours", callback_data=CallbackPrefix.OPTION.format("in 2 hours")),
-            ],
-            [
-                InlineKeyboardButton(text="Tomorrow 9am", callback_data=CallbackPrefix.OPTION.format("tomorrow at 9am")),
-                InlineKeyboardButton(text="Tomorrow 2pm", callback_data=CallbackPrefix.OPTION.format("tomorrow at 2pm")),
-            ],
-            [
-                InlineKeyboardButton(text="Next week", callback_data=CallbackPrefix.OPTION.format("next week")),
-            ],
-        ])
-
-    def create_priority_keyboard(self) -> InlineKeyboardMarkup:
-        """Create priority selection keyboard."""
-        return InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(text="🟢 Low", callback_data=CallbackPrefix.OPTION.format("low")),
-                InlineKeyboardButton(text="🟡 Medium", callback_data=CallbackPrefix.OPTION.format("medium")),
-            ],
-            [
-                InlineKeyboardButton(text="🟠 High", callback_data=CallbackPrefix.OPTION.format("high")),
-                InlineKeyboardButton(text="🔴 Urgent", callback_data=CallbackPrefix.OPTION.format("urgent")),
+                InlineKeyboardButton(
+                    text=f"✍️ {t('button_enter_time', locale=locale)}",
+                    callback_data=EditTime.callback(EditTime.Action.CUSTOM, reminder_id),
+                ),
             ],
         ])
 

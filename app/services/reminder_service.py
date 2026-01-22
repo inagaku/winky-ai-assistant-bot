@@ -68,7 +68,6 @@ class ReminderService(BaseService):
 
         remind_at = None
         event_time = None
-        explanation = ""
 
         # Case 1: Explicit notification time - user said "remind me AT <time>"
         if remind_at_explicit_str:
@@ -115,7 +114,6 @@ class ReminderService(BaseService):
         # Case 4: No time specified - default to 1 hour from now
         if remind_at is None:
             remind_at = utc_now() + timedelta(hours=1)
-            explanation = "Default: 1 hour from now"
             self.logger.info(f"No time specified, defaulting to {remind_at}")
 
         # Build description with event time context if applicable
