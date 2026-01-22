@@ -7,7 +7,10 @@ from app.models import (
     ActionIntent,
     ActionType,
     ActionStatus,
+    CallbackPrefix,
+    ClarificationOption,
     ClarificationRequest,
+    ClarificationType,
     ParsedAction,
 )
 from app.i18n import t
@@ -15,6 +18,7 @@ from app.i18n import t
 from .semantic_matcher import SemanticMatcher
 from .parameter_extractor import ParameterExtractor
 from .clarification_manager import ClarificationManager
+from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,7 @@ class IntentResolver:
     """
 
     def __init__(self, openai_api_key: str):
+        self.settings = get_settings()
         self.semantic_matcher = SemanticMatcher(openai_api_key)
         self.parameter_extractor = ParameterExtractor(openai_api_key)
         self.clarification_manager = ClarificationManager(self.parameter_extractor)
@@ -75,13 +80,19 @@ class IntentResolver:
         intent = await self.semantic_matcher.match(user_input, locale=locale)
 
         # Handle unknown/unmatched input
-        if intent.action_type == ActionType.UNKNOWN or intent.confidence < 0.3:
+        if intent.action_type == ActionType.UNKNOWN or intent.confidence < self.settings.intention_low_confidence_threshold:
             return ClarificationRequest(
-                type="ambiguous_input",
+                type=ClarificationType.AMBIGUOUS_INPUT,
                 message=t("clarify_ambiguous", locale=locale),
                 options=[
-                    t("time_option_show_help", locale=locale),
-                    t("time_option_show_summary", locale=locale),
+                    ClarificationOption(
+                        text=t("button_show_help", locale=locale),
+                        callback_data=CallbackPrefix.QUICK.format("help"),
+                    ),
+                    ClarificationOption(
+                        text=t("button_show_summary", locale=locale),
+                        callback_data=CallbackPrefix.QUICK.format("summary"),
+                    ),
                 ],
             )
 
@@ -116,42 +127,6 @@ class IntentResolver:
             f"Resolved action: {action.action_type} with confidence {action.confidence:.2f}"
         )
         return action
-
-    async def resolve_with_context(
-        self,
-        user_input: str,
-        user_id: int,
-        chat_id: int,
-        message_id: Optional[int] = None,
-        previous_clarification: Optional[ClarificationRequest] = None,
-        clarification_response: Optional[str] = None,
-        locale: str = "en",
-    ) -> Union[ParsedAction, ClarificationRequest]:
-        """
-        Resolve with context from a previous clarification.
-
-        Use this when the user is responding to a clarification request.
-        """
-        if previous_clarification and clarification_response:
-            # Process the clarification response
-            # For now, just re-resolve with the new input
-            # In a more sophisticated implementation, we'd use the context
-            return await self.resolve(
-                user_input=clarification_response,
-                user_id=user_id,
-                chat_id=chat_id,
-                message_id=message_id,
-                skip_clarification=True,  # User already provided clarification
-                locale=locale,
-            )
-
-        return await self.resolve(
-            user_input=user_input,
-            user_id=user_id,
-            chat_id=chat_id,
-            message_id=message_id,
-            locale=locale,
-        )
 
     async def get_action_suggestions(self, partial_input: str) -> list:
         """

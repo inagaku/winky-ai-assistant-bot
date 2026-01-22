@@ -139,7 +139,7 @@ DATABASE_PASSWORD=your_password
 # Optional
 LOG_LEVEL=INFO
 SCHEDULER_CHECK_INTERVAL=60
-CONFIDENCE_THRESHOLD=0.75
+CONFIDENCE_THRESHOLD=0.55
 ```
 
 ## Project Structure
@@ -224,6 +224,144 @@ winky-ai-assistant-bot/
 5. **Clarification**: If confidence is low or info is missing, the bot asks for clarification
 6. **Execution**: The appropriate service handles the request
 7. **Response**: You get a confirmation with the result
+
+## Reminder Creation Flow
+
+The following diagram shows the complete flow of creating a reminder, including clarification and alternative action selection:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     USER SENDS MESSAGE                                   │
+│  "Remind me about the meeting at 4pm" (text or audio)                   │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       MESSAGE HANDLER                                    │
+│  • Get/create user with locale & timezone preferences                   │
+│  • If audio → transcribe via Whisper API                                │
+│  • Call IntentResolver.resolve()                                        │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       INTENT RESOLVER                                    │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │ SEMANTIC MATCHER                                                   │  │
+│  │  • Generate embedding for user input                               │  │
+│  │  • Compare to pre-computed action type embeddings                  │  │
+│  │  • Return: ActionType + confidence (0.0-1.0)                       │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                 │                                        │
+│                    ┌────────────┴────────────┐                          │
+│                    ▼                         ▼                          │
+│            confidence < 0.3           confidence >= 0.3                 │
+│                    │                         │                          │
+│                    ▼                         ▼                          │
+│          Return ambiguous          ┌─────────────────────────────────┐  │
+│          clarification             │ PARAMETER EXTRACTOR (LLM)        │  │
+│                                    │  Extract: title, description,    │  │
+│                                    │  remind_at_explicit OR           │  │
+│                                    │  event_time + lead_time          │  │
+│                                    └────────────────┬────────────────┘  │
+│                                                     │                   │
+│                                                     ▼                   │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │ CLARIFICATION MANAGER                                              │  │
+│  │                                                                    │  │
+│  │  confidence < 0.55:  → Clarification (confirm with alternatives)  │  │
+│  │  confidence >= 0.55:                                              │  │
+│  │     └─ Missing params?  → Clarification (request parameter)       │  │
+│  │     └─ All params OK?   → Proceed to execute                      │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    ▼                         ▼
+          ClarificationRequest           ParsedAction
+                    │                         │
+                    ▼                         ▼
+┌────────────────────────────────┐  ┌──────────────────────────────────────┐
+│ SEND CLARIFICATION MESSAGE     │  │        EXECUTE ACTION                 │
+│                                │  │                                       │
+│ "I'm 65% confident you want    │  │ AssistantService.execute_action()    │
+│  to create a reminder"         │  │         │                             │
+│                                │  │         ▼                             │
+│ [✓ Yes, create reminder]       │  │ ReminderService.create_from_params() │
+│ [✗ No, create task]            │  │         │                             │
+│ [Something else]               │  │    ┌────┴─────┐                       │
+│                                │  │    ▼          ▼                       │
+│ Store in user_data:            │  │ Determine   Save to                   │
+│  • pending action              │  │ remind_at   database                  │
+│  • alternatives list           │  │         │                             │
+│  • original input              │  │         ▼                             │
+└────────────────────────────────┘  │ Send success message                  │
+            │                       │ "🔔 Reminder: meeting                 │
+            ▼                       │  I'll notify at 4:00 PM"              │
+    User clicks button              └──────────────────────────────────────┘
+            │
+            ▼
+┌────────────────────────────────┐
+│      CALLBACK HANDLER          │
+│                                │
+│ [confirm] Execute original     │──────► AssistantService
+│           action directly      │
+│                                │
+│ [alt]     Re-extract params    │──────► Execute alternative
+│           for selected action  │        (e.g., CREATE_TASK)
+│                                │
+│ [cancel]  Show "No problem"    │
+│           Clean up pending     │
+└────────────────────────────────┘
+
+
+REMINDER TIME MODES:
+────────────────────
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 1. remind_at_explicit: "remind me AT 4pm to buy milk"                   │
+│    → User specifies when to receive notification                        │
+│    → remind_at = 4pm                                                    │
+│                                                                         │
+│ 2. event_time + lead_time: "meeting at 4pm, notify 1 hour before"       │
+│    → User specifies event time AND advance notice                       │
+│    → remind_at = 4pm - 1 hour = 3pm                                     │
+│                                                                         │
+│ 3. event_time only: "remind me about meeting at 4pm"                    │
+│    → Smart calculator decides based on time until event                 │
+│    → <1 hour away: 15 min before | 1-3 hours: 30 min before             │
+│    → Same day: 1 hour before | Tomorrow+: morning of event day          │
+│                                                                         │
+│ 4. No time: "remind me to buy milk"                                     │
+│    → Default: 1 hour from now                                           │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+SCHEDULED NOTIFICATION FLOW:
+────────────────────────────
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        SCHEDULER SERVICE                                 │
+│  • Runs every 60 seconds                                                 │
+│  • Queries: reminders WHERE remind_at <= NOW AND status = PENDING        │
+│                                                                          │
+│  For each due reminder:                                                  │
+│   1. Send notification:  "🔔 Reminder: {title}"                           │
+│      [✅ Done] [😴 Snooze 15m]                                            │
+│   2. Mark reminder as SENT                                                │
+└──────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+                      User receives notification
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+             Clicks "Done"               Clicks "Snooze"
+                    │                           │
+                    ▼                           ▼
+           Mark reminder SENT          remind_at += 15 minutes
+           Update notification         Delete notification
+           to show completed           (new one sent when due again)
+```
 
 ## Development
 

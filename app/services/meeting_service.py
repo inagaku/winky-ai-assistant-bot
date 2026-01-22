@@ -92,7 +92,7 @@ class MeetingService(BaseService):
             end_time, confidence, interpretation = await self.datetime_parser.parse(
                 end_str,
                 timezone=user_timezone,
-                context_type="meeting",
+                    context_type="meeting",
             )
             if end_time is None:
                 end_time = start_time + timedelta(hours=1)

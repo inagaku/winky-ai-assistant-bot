@@ -1,113 +1,212 @@
 {
   "CREATE_REMINDER": {
-    "keywords": ["remind", "reminder", "remember", "don't forget", "alert me", "notify me"],
-    "description": "Create a reminder for a task or event",
+    "keywords": [
+      "set a reminder",
+      "remind me later",
+      "alert me in the future",
+      "help me remember something",
+      "don't let me forget"
+    ],
+    "description": "CREATE_REMINDER: Create a time-based reminder that will notify the user in the future about something they should remember. This is not a task to complete and not a meeting with other people.",
     "examples": [
-      "remind me to call mom",
-      "set a reminder for the meeting",
-      "remember to buy groceries",
-      "don't forget to submit the report"
+      "remind me to call mom tomorrow",
+      "don’t let me forget to submit the report",
+      "alert me at 6pm",
+      "can you remind me later?",
+      "remember to buy groceries tonight",
+      "I need a reminder for my medication",
+      "set a reminder so I don’t forget"
     ]
   },
+
   "LIST_REMINDERS": {
-    "keywords": ["show reminders", "list reminders", "my reminders", "what reminders"],
-    "description": "Show all active reminders",
+    "keywords": [
+      "show my reminders",
+      "list all reminders",
+      "what reminders do I have",
+      "view my reminders"
+    ],
+    "description": "LIST_REMINDERS: Show all active reminders. This is a simple list of reminders, not a summary of tasks or meetings.",
     "examples": [
       "show my reminders",
       "what reminders do I have",
-      "list my reminders"
+      "list all my reminders",
+      "do I have any reminders?",
+      "view my reminders"
     ]
   },
+
   "DELETE_REMINDER": {
-    "keywords": ["delete reminder", "remove reminder", "cancel reminder"],
-    "description": "Delete a reminder",
+    "keywords": [
+      "delete a reminder",
+      "remove a reminder",
+      "cancel a reminder",
+      "get rid of a reminder"
+    ],
+    "description": "DELETE_REMINDER: Permanently delete or cancel an existing reminder so it will no longer notify the user. This is not marking something as done.",
     "examples": [
       "delete my reminder",
-      "remove the reminder about",
-      "cancel the reminder"
+      "remove the reminder about the meeting",
+      "cancel that reminder",
+      "I don’t need that reminder anymore",
+      "get rid of the reminder",
+      "never mind, cancel the reminder"
     ]
   },
+
   "CREATE_TASK": {
-    "keywords": ["task", "todo", "to-do", "create task", "add task", "new task"],
-    "description": "Create a new task or todo item",
+    "keywords": [
+      "add a task",
+      "create a todo",
+      "something I need to do",
+      "add to my task list"
+    ],
+    "description": "CREATE_TASK: Create a task or todo item that the user intends to complete. Tasks are not time-based alerts and are not meetings.",
     "examples": [
       "create a task to fix the bug",
-      "add task review the code",
+      "add a task to review the code",
+      "I need to do something",
       "new task prepare presentation",
+      "add this to my todo list",
       "todo write documentation"
     ]
   },
+
   "LIST_TASKS": {
-    "keywords": ["show tasks", "list tasks", "my tasks", "what tasks", "todos"],
-    "description": "Show all active tasks",
+    "keywords": [
+      "show my tasks",
+      "list all tasks",
+      "what tasks do I have",
+      "view my todo list"
+    ],
+    "description": "LIST_TASKS: Show all active tasks or todo items. This does not include reminders or meetings.",
     "examples": [
       "show my tasks",
       "what tasks do I have",
-      "list my todos"
+      "list my todos",
+      "what’s on my task list?",
+      "show all open tasks"
     ]
   },
+
   "COMPLETE_TASK": {
-    "keywords": ["complete task", "done task", "finish task", "mark done", "mark complete"],
-    "description": "Mark a task as completed",
-    "examples": [
+    "keywords": [
       "mark task as done",
-      "complete the task",
-      "I finished the task"
+      "finish a task",
+      "complete a todo",
+      "task is finished"
+    ],
+    "description": "COMPLETE_TASK: Mark an existing task or todo item as completed or done. The task remains in history and is not deleted or removed.",
+    "examples": [
+      "mark the task as done",
+      "I finished the task",
+      "that task is complete",
+      "the todo is done",
+      "I’m done with that task",
+      "complete the task"
     ]
   },
+
   "DELETE_TASK": {
-    "keywords": ["delete task", "remove task", "cancel task"],
-    "description": "Delete a task",
+    "keywords": [
+      "delete a task",
+      "remove a task",
+      "cancel a task",
+      "get rid of a task"
+    ],
+    "description": "DELETE_TASK: Permanently delete or remove a task from the task list. This is not the same as completing or finishing a task.",
     "examples": [
       "delete the task",
-      "remove task",
-      "cancel that task"
+      "remove that task",
+      "cancel the task",
+      "I don’t need that task anymore",
+      "get rid of this task"
     ]
   },
+
   "SCHEDULE_MEETING": {
-    "keywords": ["meeting", "schedule", "appointment", "book", "set up meeting"],
-    "description": "Schedule a meeting with participants",
+    "keywords": [
+      "schedule a meeting",
+      "set up a meeting",
+      "book an appointment",
+      "plan a meeting"
+    ],
+    "description": "SCHEDULE_MEETING: Schedule a meeting or appointment that occurs at a specific time and may include other participants. This is not a task or reminder.",
     "examples": [
       "schedule a meeting with John",
       "book an appointment for tomorrow",
-      "set up a meeting at 2pm"
+      "set up a meeting at 2pm",
+      "plan a meeting with the team",
+      "add a meeting to my calendar"
     ]
   },
+
   "LIST_MEETINGS": {
-    "keywords": ["show meetings", "list meetings", "my meetings", "calendar", "agenda"],
-    "description": "Show upcoming meetings",
+    "keywords": [
+      "show my meetings",
+      "list upcoming meetings",
+      "what meetings do I have",
+      "view my calendar"
+    ],
+    "description": "LIST_MEETINGS: Show upcoming scheduled meetings or calendar events. This does not include tasks or reminders.",
     "examples": [
       "show my meetings",
       "what meetings do I have",
       "show my calendar",
-      "what's on my agenda"
+      "what’s on my agenda",
+      "list upcoming meetings"
     ]
   },
+
   "CANCEL_MEETING": {
-    "keywords": ["cancel meeting", "delete meeting", "remove meeting"],
-    "description": "Cancel a scheduled meeting",
+    "keywords": [
+      "cancel a meeting",
+      "delete a meeting",
+      "remove a meeting"
+    ],
+    "description": "CANCEL_MEETING: Cancel or delete a scheduled meeting so it no longer appears on the calendar.",
     "examples": [
       "cancel the meeting",
-      "delete meeting with John"
+      "delete the meeting with John",
+      "remove that meeting",
+      "the meeting is cancelled",
+      "call off the meeting"
     ]
   },
+
   "SHOW_SUMMARY": {
-    "keywords": ["summary", "overview", "what's up", "status", "dashboard"],
-    "description": "Show a summary of all items",
+    "keywords": [
+      "give me an overview",
+      "show everything",
+      "overall status",
+      "what’s going on"
+    ],
+    "description": "SHOW_SUMMARY: Show a high-level overview or summary of tasks, reminders, and meetings together. This is not a detailed list of a single item type.",
     "examples": [
       "show my summary",
       "give me an overview",
-      "what's on my plate",
-      "show my dashboard"
+      "what’s on my plate",
+      "show everything I have",
+      "what do I need to know today",
+      "show my dashboard",
+      "what do I have planned"
     ]
   },
+
   "HELP": {
-    "keywords": ["help", "how to", "what can you do", "commands"],
-    "description": "Show help information",
+    "keywords": [
+      "help me",
+      "how does this work",
+      "what can you do",
+      "show commands"
+    ],
+    "description": "HELP: Show help information explaining what the system can do and how to use available commands.",
     "examples": [
       "help",
       "what can you do",
-      "show commands"
+      "how does this work?",
+      "show commands",
+      "what are my options?"
     ]
   }
 }

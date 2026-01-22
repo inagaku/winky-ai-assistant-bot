@@ -8,6 +8,7 @@ from typing import Optional
 from telegram import Bot
 
 from app.database import Database
+from app.i18n import t
 from app.repositories import UserRepository, ReminderRepository, MeetingRepository
 from app.services import ReminderService, MeetingService
 from app.bot.keyboards import InlineKeyboards
@@ -84,9 +85,6 @@ class NotificationScheduler:
         # Check reminders
         await self._process_due_reminders(now)
 
-        # Check meetings
-        await self._process_upcoming_meetings(now)
-
     async def _process_due_reminders(self, now: datetime) -> None:
         """Process and send due reminder notifications."""
         due_reminders = await self.reminder_service.get_due_reminders()
@@ -100,13 +98,12 @@ class NotificationScheduler:
                     continue
 
                 # Send notification
-                message = f"🔔 **Reminder**: {reminder.title}"
+                locale = user.preferences.language
+                message = t("reminder_notification_header", locale=locale, title=reminder.title)
                 if reminder.description:
-                    message += f"\n\n{reminder.description}"
+                    message += f"\n\n\"{reminder.description}\""
 
-                keyboard = self.keyboards.create_reminder_actions_keyboard(
-                    str(reminder.id)
-                )
+                keyboard = self.keyboards.create_reminder_notification_keyboard(reminder_id=str(reminder.id), locale=locale)
 
                 await self.bot.send_message(
                     chat_id=user.telegram_id,
@@ -121,64 +118,3 @@ class NotificationScheduler:
 
             except Exception as e:
                 logger.error(f"Failed to send reminder {reminder.id}: {e}")
-
-    async def _process_upcoming_meetings(self, now: datetime) -> None:
-        """Process and send meeting reminder notifications."""
-        # Get meetings that need reminders
-        meetings = await self.meeting_service.get_meetings_needing_reminder()
-
-        for meeting in meetings:
-            try:
-                # Get user
-                user = await self.user_repository.get_by_id(meeting.user_id)
-                if not user:
-                    logger.warning(f"User not found for meeting {meeting.id}")
-                    continue
-
-                # Calculate time until meeting
-                time_until = meeting.start_time - now
-                minutes_until = int(time_until.total_seconds() / 60)
-
-                # Build message
-                message = f"📅 **Meeting in {minutes_until} minutes**: {meeting.title}"
-                if meeting.participants:
-                    message += f"\n👥 With: {', '.join(meeting.participants)}"
-                if meeting.location:
-                    message += f"\n📍 Location: {meeting.location}"
-                if meeting.meeting_link:
-                    message += f"\n🔗 Link: {meeting.meeting_link}"
-
-                keyboard = self.keyboards.create_meeting_actions_keyboard(
-                    str(meeting.id)
-                )
-
-                await self.bot.send_message(
-                    chat_id=user.telegram_id,
-                    text=message,
-                    reply_markup=keyboard,
-                    parse_mode="Markdown",
-                )
-
-                logger.info(f"Sent meeting reminder: {meeting.id}")
-
-            except Exception as e:
-                logger.error(f"Failed to send meeting reminder {meeting.id}: {e}")
-
-    async def send_immediate_notification(
-        self,
-        telegram_id: int,
-        message: str,
-        keyboard=None,
-    ) -> bool:
-        """Send an immediate notification to a user."""
-        try:
-            await self.bot.send_message(
-                chat_id=telegram_id,
-                text=message,
-                reply_markup=keyboard,
-                parse_mode="Markdown",
-            )
-            return True
-        except Exception as e:
-            logger.error(f"Failed to send immediate notification: {e}")
-            return False

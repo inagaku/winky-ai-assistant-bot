@@ -48,7 +48,38 @@ class ClarificationType(str, Enum):
     CONFIRM_ACTION = "confirm_action"
     MISSING_PARAMETER = "missing_parameter"
     AMBIGUOUS_INPUT = "ambiguous_input"
-    INVALID_VALUE = "invalid_value"
+
+
+class CallbackPrefix(str, Enum):
+    """Prefixes for callback_data in inline keyboards."""
+
+    CLARIFY = "clarify"          # Clarification responses: clarify:{action_id}:confirm
+    PARAM = "param"              # Parameter options: param:{action_id}:option_0
+    QUICK = "quick"              # Quick actions: quick:help, quick:summary
+    ACTION = "action"            # Direct actions: action:complete:{id}
+    ADJUST_TIME = "adjust_time"  # Time adjustments: adjust_time:{id}:-30
+    OPTION = "option"            # Generic options: option:{value}
+    TZ_REGION = "tz_region"      # Timezone regions: tz_region:europe
+    TZ = "tz"                    # Timezone selection: tz:Europe/Moscow
+    SETTINGS = "settings"        # Settings menu: settings:timezone
+    LANG = "lang"                # Language selection: lang:en
+
+    def format(self, *args: str) -> str:
+        """Format callback_data with prefix and arguments."""
+        if args:
+            return f"{self.value}:{':'.join(args)}"
+        return self.value
+
+    def matches(self, callback_data: str) -> bool:
+        """Check if callback_data starts with this prefix."""
+        return callback_data.startswith(f"{self.value}:")
+
+
+class ClarificationOption(BaseModel):
+    """A single option for clarification."""
+
+    text: str  # Button text to display
+    callback_data: str  # Callback data template (e.g., "clarify:{action_id}:confirm")
 
 
 class ClarificationRequest(BaseModel):
@@ -57,7 +88,7 @@ class ClarificationRequest(BaseModel):
     type: ClarificationType
     message: str
     parameter: Optional[str] = None  # Which parameter needs clarification
-    options: List[str] = Field(default_factory=list)  # Suggested options
+    options: List[ClarificationOption] = Field(default_factory=list)  # Structured options with callback data
     original_action: Optional["ParsedAction"] = None
     alternatives: Optional[List[Tuple["ActionType", float]]] = None  # Alternative actions with scores
 

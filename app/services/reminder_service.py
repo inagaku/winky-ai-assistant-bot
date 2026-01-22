@@ -68,7 +68,6 @@ class ReminderService(BaseService):
 
         remind_at = None
         event_time = None
-        explanation = ""
 
         # Case 1: Explicit notification time - user said "remind me AT <time>"
         if remind_at_explicit_str:
@@ -115,7 +114,6 @@ class ReminderService(BaseService):
         # Case 4: No time specified - default to 1 hour from now
         if remind_at is None:
             remind_at = utc_now() + timedelta(hours=1)
-            explanation = "Default: 1 hour from now"
             self.logger.info(f"No time specified, defaulting to {remind_at}")
 
         # Build description with event time context if applicable
@@ -169,6 +167,53 @@ class ReminderService(BaseService):
     async def delete_reminder(self, reminder_id: UUID) -> bool:
         """Delete a reminder permanently."""
         return await self.reminder_repository.delete(reminder_id)
+
+    async def update_remind_at(
+        self,
+        reminder_id: UUID,
+        new_time: datetime,
+    ) -> Optional[Reminder]:
+        """Update the reminder time."""
+        reminder = await self.reminder_repository.get_by_id(reminder_id)
+        if not reminder:
+            return None
+
+        reminder.remind_at = new_time
+        # Reset to pending if it was snoozed or sent
+        if reminder.status in (ReminderStatus.SNOOZED, ReminderStatus.SENT):
+            reminder.status = ReminderStatus.PENDING
+
+        updated = await self.reminder_repository.update(reminder)
+        self.logger.info(f"Updated reminder {reminder_id} time to {new_time}")
+        return updated
+
+    async def update_title(
+        self,
+        reminder_id: UUID,
+        new_title: str,
+    ) -> Optional[Reminder]:
+        """Update the reminder title."""
+        reminder = await self.reminder_repository.get_by_id(reminder_id)
+        if not reminder:
+            return None
+
+        reminder.title = new_title
+        updated = await self.reminder_repository.update(reminder)
+        self.logger.info(f"Updated reminder {reminder_id} title to '{new_title}'")
+        return updated
+
+    async def adjust_time(
+        self,
+        reminder_id: UUID,
+        minutes_delta: int,
+    ) -> Optional[Reminder]:
+        """Adjust reminder time by a number of minutes (positive = later, negative = earlier)."""
+        reminder = await self.reminder_repository.get_by_id(reminder_id)
+        if not reminder:
+            return None
+
+        new_time = reminder.remind_at + timedelta(minutes=minutes_delta)
+        return await self.update_remind_at(reminder_id, new_time)
 
     async def get_active_count(self, user_id: UUID) -> int:
         """Get count of active reminders for a user."""

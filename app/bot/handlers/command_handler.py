@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from app.services import UserService, AssistantService
 from app.models import ActionType, ActionIntent, ActionStatus, ParsedAction
 from app.bot.keyboards import InlineKeyboards
+from app.bot.user_cache import get_cached_user
 from app.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class CommandHandler:
         self.assistant_service = assistant_service
         self.keyboards = InlineKeyboards()
 
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def start(self, update: Update, callback_context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
         if not update.effective_user or not update.effective_chat:
             return
@@ -38,13 +39,7 @@ class CommandHandler:
         existing_user = await self.user_service.get_user_by_telegram_id(telegram_user.id)
         is_new_user = existing_user is None
 
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-            language_code=telegram_user.language_code,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         locale = user.preferences.language
 
@@ -53,7 +48,7 @@ class CommandHandler:
             welcome_message = t("welcome_new_user", locale=locale, name=user.display_name)
 
             # Store onboarding state
-            context.user_data[ONBOARDING_STATE_KEY] = {
+            callback_context.user_data[ONBOARDING_STATE_KEY] = {
                 "step": "timezone",
                 "user_id": str(user.id),
             }
@@ -73,19 +68,14 @@ class CommandHandler:
 
             await update.message.reply_text(welcome_message)
 
-    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def help(self, update: Update, callback_context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command."""
         if not update.effective_user or not update.effective_chat:
             return
 
         # Get or create user
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         # Create a help action and execute it
         intent = ActionIntent(
@@ -105,18 +95,13 @@ class CommandHandler:
         result = await self.assistant_service.execute_action(action, user)
         await update.message.reply_text(result.message, parse_mode="Markdown")
 
-    async def summary(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def summary(self, update: Update, callback_context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /summary command."""
         if not update.effective_user or not update.effective_chat:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         intent = ActionIntent(
             action_type=ActionType.SHOW_SUMMARY,
@@ -135,18 +120,13 @@ class CommandHandler:
         result = await self.assistant_service.execute_action(action, user)
         await update.message.reply_text(result.message)
 
-    async def reminders(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def reminders(self, update: Update, callback_context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /reminders command."""
         if not update.effective_user or not update.effective_chat:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         intent = ActionIntent(
             action_type=ActionType.LIST_REMINDERS,
@@ -165,18 +145,13 @@ class CommandHandler:
         result = await self.assistant_service.execute_action(action, user)
         await update.message.reply_text(result.message)
 
-    async def tasks(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def tasks(self, update: Update, callback_context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /tasks command."""
         if not update.effective_user or not update.effective_chat:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         intent = ActionIntent(
             action_type=ActionType.LIST_TASKS,
@@ -195,18 +170,13 @@ class CommandHandler:
         result = await self.assistant_service.execute_action(action, user)
         await update.message.reply_text(result.message)
 
-    async def meetings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def meetings(self, update: Update, callback_context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /meetings command."""
         if not update.effective_user or not update.effective_chat:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         intent = ActionIntent(
             action_type=ActionType.LIST_MEETINGS,
@@ -225,19 +195,13 @@ class CommandHandler:
         result = await self.assistant_service.execute_action(action, user)
         await update.message.reply_text(result.message)
 
-    async def settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def settings(self, update: Update, callback_context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /settings command."""
         if not update.effective_user or not update.effective_chat:
             return
 
         telegram_user = update.effective_user
-        user = await self.user_service.get_or_create_user(
-            telegram_id=telegram_user.id,
-            username=telegram_user.username,
-            first_name=telegram_user.first_name,
-            last_name=telegram_user.last_name,
-            language_code=telegram_user.language_code,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
         locale = user.preferences.language
         settings_message = t("settings_title", locale=locale, name=user.display_name)

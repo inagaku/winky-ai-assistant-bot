@@ -1,24 +1,42 @@
-"""Handler for inline keyboard callbacks."""
+"""Handler for inline keyboard callbacks (fallback for non-conversation callbacks).
+
+This handler processes callbacks NOT handled by ConversationHandlers:
+- Notification actions (snooze, complete/done)
+- Task/meeting actions
+- Clarification responses
+- Quick actions (help, summary)
+
+Reminder edit callbacks (change_time, edit_title, ok, delete) are handled by
+ReminderEditConversation when user is in the edit flow.
+Settings callbacks are handled by SettingsConversation.
+"""
 
 import logging
 from uuid import UUID
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from app.models import ParsedAction, ActionIntent, ActionStatus, ActionType
+from app.models import (
+    ParsedAction,
+    ActionIntent,
+    ActionStatus,
+    ActionType,
+    CallbackPrefix,
+    ReminderFlow,
+)
 from app.services import UserService, AssistantService, ReminderService, TaskService
 from app.intelligence import IntentResolver
 from app.bot.keyboards import InlineKeyboards
 from app.i18n import t
-from app.utils import format_time
+from app.utils import format_time, format_datetime
+from app.bot.user_cache import get_cached_user
 from .message_handler import PENDING_ACTIONS_KEY
-from .command_handler import ONBOARDING_STATE_KEY
 
 logger = logging.getLogger(__name__)
 
 
 class CallbackHandler:
-    """Handle inline keyboard button callbacks."""
+    """Handle inline keyboard callbacks not handled by conversations."""
 
     def __init__(
         self,
@@ -38,7 +56,7 @@ class CallbackHandler:
     async def handle_callback(
         self,
         update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
     ) -> None:
         """Handle callback queries from inline keyboards."""
         query = update.callback_query
@@ -51,56 +69,99 @@ class CallbackHandler:
         if not callback_data:
             return
 
-        logger.info(f"Callback received: {callback_data}")
+        logger.info(f"Fallback callback received: {callback_data}")
 
         # Get user
         if not query.from_user:
             return
 
-        user = await self.user_service.get_or_create_user(
-            telegram_id=query.from_user.id,
-            username=query.from_user.username,
-            first_name=query.from_user.first_name,
-            last_name=query.from_user.last_name,
-        )
+        user = await get_cached_user(update, callback_context, self.user_service)
 
-        # Parse callback data
-        if callback_data.startswith("clarify:"):
-            # User responded to a clarification request
-            await self._handle_clarification_response(query, context, user, callback_data)
-        elif callback_data.startswith("option:"):
-            # User selected an option from clarification
-            option_text = callback_data[7:]  # Remove "option:" prefix
-            await self._handle_option_selection(query, context, user, option_text)
-        elif callback_data.startswith("action:"):
-            # Direct action callback
-            action_data = callback_data[7:]
-            await self._handle_action_callback(query, context, user, action_data)
-        elif callback_data.startswith("tz_region:"):
-            # Timezone region selection
-            region = callback_data[10:]  # Remove "tz_region:" prefix
-            await self._handle_timezone_region(query, context, user, region)
-        elif callback_data.startswith("tz:"):
-            # Timezone selection
-            timezone = callback_data[3:]  # Remove "tz:" prefix
-            await self._handle_timezone_selection(query, context, user, timezone)
-        elif callback_data.startswith("settings:"):
-            # Settings callback
-            setting = callback_data[9:]  # Remove "settings:" prefix
-            await self._handle_settings_callback(query, context, user, setting)
-        elif callback_data.startswith("lang:"):
-            # Language selection
-            language = callback_data[5:]  # Remove "lang:" prefix
-            await self._handle_language_selection(query, context, user, language)
+        # Route callbacks by prefix
+        # New entity-based callbacks (reminder:{flow}:{action}:{id})
+        # Note: Edit and Delete flows are handled by ReminderEditConversation
+        if callback_data.startswith(f"{ReminderFlow.ENTITY}:{ReminderFlow.Notify.FLOW}:"):
+            await self._handle_reminder_notify(query, callback_context, user, callback_data)
+        # Legacy prefixed callbacks
+        elif CallbackPrefix.CLARIFY.matches(callback_data):
+            await self._handle_clarification_response(query, callback_context, user, callback_data)
+        elif CallbackPrefix.OPTION.matches(callback_data):
+            option_text = callback_data[len(CallbackPrefix.OPTION.value) + 1:]
+            await self._handle_option_selection(query, callback_context, user, option_text)
+        elif CallbackPrefix.ACTION.matches(callback_data):
+            action_data = callback_data[len(CallbackPrefix.ACTION.value) + 1:]
+            await self._handle_action_callback(query, callback_context, user, action_data)
+        elif CallbackPrefix.PARAM.matches(callback_data):
+            await self._handle_param_option(query, callback_context, user, callback_data)
+        elif CallbackPrefix.QUICK.matches(callback_data):
+            await self._handle_quick_action(query, callback_context, user, callback_data)
         elif callback_data == "cancel":
             await query.edit_message_text(t("cancelled", locale=user.preferences.language))
         else:
             logger.warning(f"Unknown callback data: {callback_data}")
 
+    async def _handle_reminder_notify(
+        self,
+        query,
+        callback_context: ContextTypes.DEFAULT_TYPE,
+        user,
+        callback_data: str,
+    ) -> None:
+        """Handle reminder notification callbacks (snooze, done).
+
+        Callback format: reminder:notify:{action}:{id}
+        """
+        Notify = ReminderFlow.Notify
+        locale = user.preferences.language
+        timezone = user.preferences.timezone
+
+        parsed = ReminderFlow.parse(callback_data)
+        if not parsed:
+            await query.edit_message_text(t("invalid_action", locale=locale))
+            return
+
+        flow, action, reminder_id = parsed
+
+        try:
+            item_uuid = UUID(reminder_id)
+        except ValueError:
+            await query.edit_message_text(t("invalid_id", locale=locale))
+            return
+
+        if action == Notify.Action.SNOOZE.value:
+            # Snooze reminder for 15 minutes
+            reminder = await self.reminder_service.snooze_reminder(item_uuid, minutes=15)
+            if reminder:
+                try:
+                    await query.delete_message()
+                except Exception as e:
+                    logger.warning(f"Could not delete message: {e}")
+                    new_time = format_time(reminder.remind_at, timezone=timezone)
+                    await query.edit_message_text(f"😴 {t('reminder_snoozed', locale=locale, time=new_time)}")
+            else:
+                await query.edit_message_text(t("reminder_not_found", locale=locale))
+
+        elif action == Notify.Action.DONE.value:
+            # Mark reminder as done
+            reminder = await self.reminder_service.mark_sent(item_uuid)
+            if reminder:
+                completed_text = t("reminder_completed_text", locale=locale, title=reminder.title)
+                await query.edit_message_text(
+                    completed_text,
+                    reply_markup=None,
+                    parse_mode="Markdown",
+                )
+            else:
+                await query.edit_message_text(t("reminder_not_found", locale=locale))
+
+        else:
+            logger.warning(f"Unknown reminder notify action: {action}")
+            await query.edit_message_text(t("unknown_action", locale=locale, action=action))
+
     async def _handle_option_selection(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         option_text: str,
     ) -> None:
@@ -113,7 +174,7 @@ class CallbackHandler:
             user_id=user.telegram_id,
             chat_id=query.message.chat_id,
             message_id=query.message.message_id,
-            skip_clarification=True,  # User already made a choice
+            skip_clarification=True,
             locale=locale,
         )
 
@@ -126,19 +187,26 @@ class CallbackHandler:
             else:
                 emoji = "✅" if action_result.success else "❌"
                 message = f"{emoji} {action_result.message}"
-            await query.edit_message_text(message)
+
+            # Add edit keyboard for successful reminder creation
+            keyboard = None
+            if action_result.success and result.action_type == ActionType.CREATE_REMINDER:
+                reminder_id = action_result.data.get("reminder_id")
+                if reminder_id:
+                    keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
+
+            await query.edit_message_text(message, reply_markup=keyboard)
         else:
-            # It's still a clarification
             await query.edit_message_text(result.message)
 
     async def _handle_action_callback(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         action_data: str,
     ) -> None:
-        """Handle direct action callbacks."""
+        """Handle direct action callbacks (notification buttons, task/meeting actions)."""
         # Parse action:type:id format
         parts = action_data.split(":", 1)
         action_type = parts[0]
@@ -158,10 +226,9 @@ class CallbackHandler:
 
         # Handle specific actions
         if action_type == "snooze":
-            # Snooze a reminder for 15 minutes and delete the notification
+            # Snooze a reminder for 15 minutes
             reminder = await self.reminder_service.snooze_reminder(item_uuid, minutes=15)
             if reminder:
-                # Delete the notification message - user will get a new one when due
                 try:
                     await query.delete_message()
                 except Exception as e:
@@ -173,11 +240,9 @@ class CallbackHandler:
                 await query.edit_message_text(t("reminder_not_found", locale=locale))
 
         elif action_type == "complete":
-            # Could be a reminder "Done" or a task "Complete"
-            # Try reminder first (mark as sent), then task
+            # Complete a reminder (mark as done) or task
             reminder = await self.reminder_service.mark_sent(item_uuid)
             if reminder:
-                # Update message to show completed, remove buttons
                 completed_text = t("reminder_completed_text", locale=locale, title=reminder.title)
                 await query.edit_message_text(
                     completed_text,
@@ -206,42 +271,44 @@ class CallbackHandler:
                 await query.edit_message_text(t("meeting_not_found", locale=locale))
 
         elif action_type == "edit":
-            # Edit functionality - for now just acknowledge
+            # Edit functionality (for tasks/meetings)
             await query.edit_message_text(t("edit_coming_soon", locale=locale))
 
         elif action_type == "delete":
-            # Delete a task
+            # Delete (could be task if not handled by conversation)
             deleted = await self.task_service.delete_task(item_uuid)
             if deleted:
                 await query.edit_message_text(f"🗑️ {t('task_deleted', locale=locale)}")
             else:
-                await query.edit_message_text(t("task_not_found", locale=locale))
+                await query.edit_message_text(t("item_not_found", locale=locale))
 
         else:
+            # Unknown action type - might be handled by conversation
+            logger.debug(f"Action type '{action_type}' not handled by fallback, might be for conversation")
             await query.edit_message_text(t("unknown_action", locale=locale, action=action_type))
 
     async def _handle_clarification_response(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
         callback_data: str,
     ) -> None:
         """Handle user response to a clarification request."""
         locale = user.preferences.language
 
-        # Parse: clarify:{action_id}:{option_index}:{response_type}
+        # Parse: clarify:{action_id}:{response_type}
         parts = callback_data.split(":")
-        if len(parts) < 4:
+        if len(parts) < 3:
             logger.error(f"Invalid clarification callback data: {callback_data}")
             await query.edit_message_text(t("something_went_wrong_generic", locale=locale))
             return
 
         action_id = parts[1]
-        response_type = parts[3]  # confirm, alt, or cancel
+        response_type = parts[2]
 
         # Retrieve the pending action from user_data
-        pending_actions = context.user_data.get(PENDING_ACTIONS_KEY, {})
+        pending_actions = callback_context.user_data.get(PENDING_ACTIONS_KEY, {})
         pending_data = pending_actions.get(action_id)
 
         if not pending_data:
@@ -250,53 +317,52 @@ class CallbackHandler:
             return
 
         if response_type == "confirm":
-            # User confirmed - execute the original action with original parameters
             original_action = pending_data.get("original_action")
             if original_action and isinstance(original_action, ParsedAction):
-                action_result = await self.assistant_service.execute_action(
-                    original_action, user
-                )
+                action_result = await self.assistant_service.execute_action(original_action, user)
                 create_actions = {ActionType.CREATE_REMINDER, ActionType.CREATE_TASK, ActionType.SCHEDULE_MEETING}
                 if original_action.action_type in create_actions:
                     message = action_result.message if action_result.success else f"❌ {action_result.message}"
                 else:
                     emoji = "✅" if action_result.success else "❌"
                     message = f"{emoji} {action_result.message}"
-                await query.edit_message_text(message)
+
+                keyboard = None
+                if action_result.success and original_action.action_type == ActionType.CREATE_REMINDER:
+                    reminder_id = action_result.data.get("reminder_id")
+                    if reminder_id:
+                        keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
+
+                await query.edit_message_text(message, reply_markup=keyboard)
             else:
-                logger.error(f"Invalid original_action for action_id: {action_id}")
                 await query.edit_message_text(t("something_went_wrong_generic", locale=locale))
 
-        elif response_type == "alt":
-            # User selected an alternative action
-            option_index = int(parts[2])
+        elif response_type.startswith("alt_"):
+            try:
+                alt_index = int(response_type[4:])
+            except ValueError:
+                await query.edit_message_text(t("invalid_action", locale=locale))
+                return
+
             alternatives = pending_data.get("alternatives")
             original_input = pending_data.get("original_input")
+            actual_index = alt_index + 1
 
-            if not alternatives or option_index < 1 or option_index > len(alternatives) - 1:
-                # Invalid alternative index
+            if not alternatives or actual_index >= len(alternatives):
                 await query.edit_message_text(t("describe_what_to_do", locale=locale))
                 return
 
-            # alternatives[0] is the primary action, alternatives[1:] are the shown alternatives
-            # option_index 1 corresponds to alternatives[1], etc.
-            selected_action_type, _ = alternatives[option_index]
+            selected_action_type, _ = alternatives[actual_index]
 
-            # Re-resolve with the selected action type
             if original_input:
-                # Extract parameters for the new action type
                 parameters = await self.intent_resolver.parameter_extractor.extract(
                     original_input, selected_action_type
                 )
-
-                # Create new intent with high confidence (user explicitly chose this)
                 new_intent = ActionIntent(
                     action_type=selected_action_type,
                     confidence=1.0,
                     original_input=original_input,
                 )
-
-                # Create the action
                 new_action = ParsedAction(
                     intent=new_intent,
                     parameters=parameters,
@@ -306,7 +372,6 @@ class CallbackHandler:
                     status=ActionStatus.PENDING,
                 )
 
-                # Execute it
                 action_result = await self.assistant_service.execute_action(new_action, user)
                 create_actions = {ActionType.CREATE_REMINDER, ActionType.CREATE_TASK, ActionType.SCHEDULE_MEETING}
                 if selected_action_type in create_actions:
@@ -314,148 +379,145 @@ class CallbackHandler:
                 else:
                     emoji = "✅" if action_result.success else "❌"
                     message = f"{emoji} {action_result.message}"
-                await query.edit_message_text(message)
+
+                keyboard = None
+                if action_result.success and selected_action_type == ActionType.CREATE_REMINDER:
+                    reminder_id = action_result.data.get("reminder_id")
+                    if reminder_id:
+                        keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
+
+                await query.edit_message_text(message, reply_markup=keyboard)
             else:
                 await query.edit_message_text(t("describe_what_to_do", locale=locale))
 
-        elif response_type == "cancel":
-            # User wants to cancel or do something else
+        elif response_type == "another":
             await query.edit_message_text(t("no_problem", locale=locale))
 
         else:
-            logger.warning(f"Unknown clarification response type: {response_type}")
             await query.edit_message_text(t("try_again", locale=locale))
 
-        # Clean up the pending action
+        # Clean up
         if action_id in pending_actions:
             del pending_actions[action_id]
 
-    async def _handle_timezone_region(
+    async def _handle_param_option(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
-        region: str,
+        callback_data: str,
     ) -> None:
-        """Handle timezone region selection."""
+        """Handle parameter option selection for missing parameter clarification."""
         locale = user.preferences.language
 
-        if region == "back":
-            # Go back to region selection
-            await query.edit_message_text(
-                t("select_region", locale=locale),
-                reply_markup=self.keyboards.create_timezone_region_keyboard(),
-            )
-        else:
-            # Show timezones for the selected region
-            await query.edit_message_text(
-                t("select_timezone", locale=locale),
-                reply_markup=self.keyboards.create_timezone_keyboard(region),
-            )
-
-    async def _handle_timezone_selection(
-        self,
-        query,
-        context: ContextTypes.DEFAULT_TYPE,
-        user,
-        timezone: str,
-    ) -> None:
-        """Handle timezone selection."""
-        locale = user.preferences.language
-
-        # Update user's timezone
-        updated_user = await self.user_service.update_timezone(user.id, timezone)
-
-        if not updated_user:
-            await query.edit_message_text(t("update_failed", locale=locale))
+        # Parse: param:{action_id}:option_{index}
+        parts = callback_data.split(":")
+        if len(parts) < 3:
+            await query.edit_message_text(t("invalid_action", locale=locale))
             return
 
-        # Check if this is during onboarding
-        onboarding_state = context.user_data.get(ONBOARDING_STATE_KEY)
+        action_id = parts[1]
+        option_part = parts[2]
 
-        if onboarding_state and onboarding_state.get("step") == "timezone":
-            # Complete onboarding
-            del context.user_data[ONBOARDING_STATE_KEY]
-
-            completion_message = t("onboarding_complete", locale=locale, timezone=timezone)
-            await query.edit_message_text(completion_message)
-        else:
-            # Regular settings update - go back to settings menu
-            await query.edit_message_text(
-                t("timezone_updated", locale=locale, timezone=timezone),
-                reply_markup=self.keyboards.create_settings_keyboard(
-                    current_timezone=timezone,
-                    current_language=user.preferences.language,
-                ),
-            )
-
-    async def _handle_language_selection(
-        self,
-        query,
-        context: ContextTypes.DEFAULT_TYPE,
-        user,
-        language: str,
-    ) -> None:
-        """Handle language selection."""
-        # Update user's language
-        updated_user = await self.user_service.update_language(user.id, language)
-
-        if not updated_user:
-            await query.edit_message_text(t("update_failed", locale=user.preferences.language))
+        if not option_part.startswith("option_"):
+            await query.edit_message_text(t("invalid_action", locale=locale))
             return
 
-        # Use the NEW language for the confirmation message
-        locale = language
+        try:
+            option_index = int(option_part[7:])
+        except ValueError:
+            await query.edit_message_text(t("invalid_action", locale=locale))
+            return
 
-        # Map language codes to display names
-        language_names = {
-            "en": "English",
-            "ru": "Русский",
-        }
-        lang_display = language_names.get(language, language)
+        pending_actions = callback_context.user_data.get(PENDING_ACTIONS_KEY, {})
+        pending_data = pending_actions.get(action_id)
 
-        # Go back to settings menu
-        await query.edit_message_text(
-            t("language_updated", locale=locale, language=lang_display),
-            reply_markup=self.keyboards.create_settings_keyboard(
-                current_timezone=user.preferences.timezone,
-                current_language=language,
-            ),
-        )
+        if not pending_data:
+            await query.edit_message_text(t("expired_action", locale=locale))
+            return
 
-    async def _handle_settings_callback(
+        clarification = pending_data.get("clarification")
+        if not clarification or option_index >= len(clarification.options):
+            await query.edit_message_text(t("invalid_action", locale=locale))
+            return
+
+        selected_option = clarification.options[option_index]
+        selected_text = selected_option.text
+
+        original_action = pending_data.get("original_action")
+        if original_action and isinstance(original_action, ParsedAction):
+            param_name = clarification.parameter
+            original_action.parameters[param_name] = selected_text
+
+            action_result = await self.assistant_service.execute_action(original_action, user)
+            create_actions = {ActionType.CREATE_REMINDER, ActionType.CREATE_TASK, ActionType.SCHEDULE_MEETING}
+            if original_action.action_type in create_actions:
+                message = action_result.message if action_result.success else f"❌ {action_result.message}"
+            else:
+                emoji = "✅" if action_result.success else "❌"
+                message = f"{emoji} {action_result.message}"
+
+            keyboard = None
+            if action_result.success and original_action.action_type == ActionType.CREATE_REMINDER:
+                reminder_id = action_result.data.get("reminder_id")
+                if reminder_id:
+                    keyboard = self.keyboards.create_reminder_selected_keyboard(reminder_id, locale=locale)
+
+            await query.edit_message_text(message, reply_markup=keyboard)
+        else:
+            await query.edit_message_text(t("expired_action", locale=locale))
+
+        # Clean up
+        if action_id in pending_actions:
+            del pending_actions[action_id]
+
+    async def _handle_quick_action(
         self,
         query,
-        context: ContextTypes.DEFAULT_TYPE,
+        callback_context: ContextTypes.DEFAULT_TYPE,
         user,
-        setting: str,
+        callback_data: str,
     ) -> None:
-        """Handle settings menu callbacks."""
+        """Handle quick actions for ambiguous input (help, summary)."""
         locale = user.preferences.language
 
-        if setting == "timezone":
-            # Show timezone region selection
-            await query.edit_message_text(
-                t("select_region", locale=locale),
-                reply_markup=self.keyboards.create_timezone_region_keyboard(),
+        # Parse: quick:{action}
+        action = callback_data[len(CallbackPrefix.QUICK.value) + 1:]
+
+        if action == "help":
+            help_intent = ActionIntent(
+                action_type=ActionType.HELP,
+                confidence=1.0,
+                original_input="help",
             )
-        elif setting == "language":
-            # Show language selection
-            await query.edit_message_text(
-                t("select_language", locale=locale),
-                reply_markup=self.keyboards.create_language_keyboard(),
+            help_action = ParsedAction(
+                intent=help_intent,
+                parameters={},
+                user_id=user.telegram_id,
+                chat_id=query.message.chat_id,
+                message_id=query.message.message_id,
+                status=ActionStatus.PENDING,
             )
-        elif setting == "back":
-            # Go back to settings menu
-            await query.edit_message_text(
-                t("settings_title", locale=locale, name=user.display_name),
-                reply_markup=self.keyboards.create_settings_keyboard(
-                    current_timezone=user.preferences.timezone,
-                    current_language=user.preferences.language,
-                ),
+            action_result = await self.assistant_service.execute_action(help_action, user)
+            await query.edit_message_text(action_result.message)
+
+        elif action == "summary":
+            summary_intent = ActionIntent(
+                action_type=ActionType.SHOW_SUMMARY,
+                confidence=1.0,
+                original_input="show summary",
             )
-        elif setting == "done":
-            # Close settings menu
-            await query.edit_message_text(
-                t("settings_saved", locale=locale, timezone=user.preferences.timezone, language=user.preferences.language)
+            summary_action = ParsedAction(
+                intent=summary_intent,
+                parameters={},
+                user_id=user.telegram_id,
+                chat_id=query.message.chat_id,
+                message_id=query.message.message_id,
+                status=ActionStatus.PENDING,
             )
+            action_result = await self.assistant_service.execute_action(summary_action, user)
+            await query.edit_message_text(action_result.message)
+
+        else:
+            logger.warning(f"Unknown quick action: {action}")
+            await query.edit_message_text(t("invalid_action", locale=locale))

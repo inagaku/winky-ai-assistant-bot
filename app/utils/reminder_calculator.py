@@ -1,11 +1,9 @@
 """Smart reminder time calculator for intelligent notification scheduling."""
 
 import logging
-from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-
-from .time_utils import utc_now
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +81,7 @@ class ReminderTimeCalculator:
         Returns:
             Tuple of (reminder_time, explanation)
         """
-        now = reference_time or utc_now()
+        now = reference_time or datetime.now(timezone.utc)
         time_until = action_time - now
         category = self._categorize_time_distance(time_until, now, action_time)
 
@@ -255,7 +253,7 @@ class ReminderTimeCalculator:
         reference_time: Optional[datetime] = None,
     ) -> str:
         """Get a human-readable string of time until action."""
-        now = reference_time or utc_now()
+        now = reference_time or datetime.now(timezone.utc)
         time_until = action_time - now
 
         if time_until.total_seconds() < 0:

@@ -2,7 +2,38 @@
 
 import re
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Dict, Optional
+
+
+# Cached mapping, built on first access to avoid circular import
+_TIME_DELTA_PRESETS: Optional[Dict[str, timedelta]] = None
+
+
+def _get_time_delta_presets() -> Dict[str, timedelta]:
+    """Build mapping lazily to avoid circular import."""
+    global _TIME_DELTA_PRESETS
+    if _TIME_DELTA_PRESETS is None:
+        from app.models.reminder import ReminderFlow
+        Action = ReminderFlow.EditTime.Action
+        _TIME_DELTA_PRESETS = {
+            Action.MINUS_30M.value: timedelta(minutes=-30),
+            Action.PLUS_30M.value: timedelta(minutes=30),
+            Action.MINUS_1H.value: timedelta(hours=-1),
+            Action.PLUS_1H.value: timedelta(hours=1),
+        }
+    return _TIME_DELTA_PRESETS
+
+
+def get_time_delta(time_delta: str) -> Optional[timedelta]:
+    """Get timedelta offset for a time adjustment action.
+
+    Args:
+        time_delta: The action value string (e.g., "minus30m", "plus1h")
+
+    Returns:
+        timedelta offset, or None if action not found
+    """
+    return _get_time_delta_presets().get(time_delta)
 
 
 def utc_now() -> datetime:
@@ -13,6 +44,7 @@ def utc_now() -> datetime:
     a naive datetime. Returns timezone-aware datetime in UTC.
     """
     return datetime.now(timezone.utc)
+
 
 
 def parse_duration(duration_str: str) -> Optional[int]:
